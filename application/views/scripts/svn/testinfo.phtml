@@ -1,0 +1,49 @@
+<pre>
+<?php
+echo "message                         : ".$this->message;
+echo "\n";
+echo "subtype                         : ".$this->subtype;
+echo "\n";
+echo "svn_path_base_remote            : ".$this->svn_path_base_remote;
+echo "\n";
+echo "svn_path_base_local             : ".$this->svn_path_base_local;
+echo "\n";
+echo "svn base checked out            : ".$this->svn_base_checkedout;
+echo "\n";
+echo "svn base updated                : ".$this->svn_base_updated;
+echo "\n";
+echo "svn path_subtype_remote         : ".$this->svn_path_subtype_remote;
+echo "\n";
+echo "svn path_subtype_local          : ".$this->svn_path_subtype_local;
+echo "\n";
+echo "svn_subtype_exists_remote       : ".$this->svn_subtype_exists_remote;
+echo "\n";
+echo "svn_subtype_exists_local        : ".$this->svn_subtype_exists_local;
+echo "\n";
+echo "svn_subtype_updated             : ".$this->svn_subtype_updated;
+echo "\n";
+echo "svn_subtype_list: ";
+echo "\n";
+if($this->svn_subtype_updated){
+
+	print_r($this->svn_subtype_list);
+}
+
+
+
+echo "svn_subtype_mkdir               : ".$this->svn_subtype_mkdir;
+echo "\n";
+
+
+
+if($this->svn_subtype_committed){
+	echo "svn_subtype_committed           : ";
+	print_r($this->svn_subtype_committed);
+	echo "\n";
+}
+echo "=========================\n";
+echo "svn_list: ";
+echo "\n";
+print_r($this->svn_ls);
+?>
+</pre>

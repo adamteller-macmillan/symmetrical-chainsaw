@@ -1,1 +1,208 @@
-OK2
+<script>
+var svn_path_base_local  = "<?php echo $this->svn_path_base_local; ?>";
+var svn_status_constants = ['1','2','?','3','A','!','D','A','M','9','C','I','~','13','14'];
+var show_svn_ls = function(list){
+	var _output = dojo.byId("output");
+	_output.innerHTML = '';
+	var _table = dojo.create('table',{style:'width: 400px;background-color: #ffc; float: left'},_output);    
+	var _trx   = dojo.create("tr",{},_table);
+	var _tdx0  = dojo.create("td",{innerHTML:"subtype",style:"color: #999;font-size: smaller; padding-left: 0.5em;"},_trx);
+	var _tdx1  = dojo.create("td",{innerHTML:"rev",style:"color: #999;font-size: smaller; padding-left:0.5em;"},_trx);
+	var _tdx2  = dojo.create("td",{innerHTML:"time",style:"color: #999;font-size: smaller; padding-left:0.5em;"},_trx);
+
+	if(list){
+		for(_item in list){
+			var _tr    = dojo.create("tr",{},_table);
+			var _td0   = dojo.create("td",{innerHTML: _item,style:"padding-left:0.5em;"},_tr);
+			var _td1   = dojo.create("td",{innerHTML: list[_item]['created_rev'], style:"padding-left:0.5em;"},_tr); 
+			var _td2   = dojo.create("td",{innerHTML: list[_item]['time'], style:"padding-left:0.5em;"},_tr); 
+			var _td3   = dojo.create("td",{},_tr);
+			var _td4   = dojo.create("td",{},_tr);
+			var _td5   = dojo.create("td",{},_tr);
+
+			var _a3    = dojo.create('a', {href:'#',innerHTML:'remote',onclick: svn_subtype_ls_remote_click_fn(_item) },_td3);
+			var _a4    = dojo.create('a', {href:'#',innerHTML:'local ',onclick: svn_subtype_ls_local_click_fn(_item) },_td4);
+			var _a5    = dojo.create('a', {href:'#',innerHTML:'status',onclick: svn_subtype_status_local_click_fn(_item)},_td5);
+		};
+	}
+
+	dojo.create('div',{id: 'subtype_display',style:'margin-left: 1em; float: left; background-color: #fff;',innerHTML: ''},_output);
+}
+var svn_subtype_ls_remote_click_fn = function(_item){
+		return function(){
+				
+				
+				var     _subtype_display = dojo.byId('subtype_display');
+				_subtype_display.innerHTML = '';
+				var     _h4 = dojo.create('h4',{innerHTML:_item,style:'margin-top: 0.2em'},_subtype_display);
+				var     _sm = dojo.create('div',{innerHTML:'',id:'subtype_display_message'},_subtype_display);
+
+				_sm.innerHTML = 'fetching remote listing...';
+				dojo.xhrGet({
+					url: '/svn/list/subtype/'+_item,
+					handleAs: 'json',
+					load: function(data){
+						_sm.innerHTML = 'subtype remote listing: '+data.length+' entries found';
+						
+						
+						if(data){
+							var _sul = dojo.create('ul',{},_subtype_display);
+							dojo.forEach(data,function(_f,_i){
+								var _sli = dojo.create('li',{innerHTML:_f},_sul);
+							});
+
+						}
+						
+					},
+					error: function(err){
+						_sm.innerHTML = 'error fetching subtype remote listing: '+err;
+					}	
+				});
+				
+				return false;
+		}
+}
+
+var svn_subtype_ls_local_click_fn = function(_item){
+		return function(){
+				//window.alert(_item); 
+				
+				var     _subtype_display = dojo.byId('subtype_display');
+				_subtype_display.innerHTML = '';
+				var     _h4 = dojo.create('h4',{innerHTML:_item,style:'margin-top: 0.2em'},_subtype_display);
+				var     _sm = dojo.create('div',{innerHTML:'',id:'subtype_display_message'},_subtype_display);
+
+				_sm.innerHTML = 'fetching local working copy listing...';
+				dojo.xhrGet({
+					url: '/svn/listlocal/subtype/'+_item,
+					handleAs: 'json',
+					load: function(data){
+						_sm.innerHTML = 'subtype local working copy listing: '+data.length+' entries found';
+						
+						
+						if(data){
+							var _sul = dojo.create('ul',{},_subtype_display);
+							dojo.forEach(data,function(_f,_i){
+								var _sli = dojo.create('li',{innerHTML:_f},_sul);
+							});
+
+						}
+						
+					},
+					error: function(err){
+						_sm.innerHTML = 'error fetching subtype local working copy listing: '+err;
+					}	
+				});
+				
+				return false;
+		}
+}
+var svn_subtype_status_local_click_fn = function(_item){
+		return function(){
+				var _local_base = svn_path_base_local+"/"+_item+"/";
+				var _local_base_len = _local_base.length;
+				
+
+				var     _subtype_display = dojo.byId('subtype_display');
+				_subtype_display.innerHTML = '';
+				var     _h4 = dojo.create('h4',{innerHTML:_item,style:'margin-top: 0.2em'},_subtype_display);
+				var     _sm = dojo.create('div',{innerHTML:'',id:'subtype_display_message'},_subtype_display);
+
+				_sm.innerHTML = 'fetching local working copy status...';
+				dojo.xhrGet({
+					url: '/svn/status/subtype/'+_item,
+					handleAs: 'json',
+					load: function(data){
+						if(data.length==0){
+							_sm.innerHTML = 'local working copy is up-to-date.';
+						}else{
+							_sm.innerHTML = data.length+" entries found.";
+							
+							var _status_table = dojo.create('table',{},_subtype_display);
+							dojo.forEach(data,function(_sitem,_si){
+								var _path = _sitem['path'];
+								
+
+
+								var _tr  = dojo.create('tr',{},_status_table);
+								var _td0 = dojo.create('td',{innerHTML: svn_status_constants[_sitem['text_status']]},_tr);
+								var _td1 = dojo.create('td',{innerHTML: '&nbsp;'+_path.substring(_local_base_len)},_tr);
+								
+							});		
+						}
+						/**
+						_sm.innerHTML = 'subtype local working copy listing: '+data.length+' entries found';
+						
+						
+						if(data){
+							var _sul = dojo.create('ul',{},_subtype_display);
+							dojo.forEach(data,function(_f,_i){
+								var _sli = dojo.create('li',{innerHTML:_f},_sul);
+							});
+
+						}
+						**/
+					},
+					error: function(err){
+						_sm.innerHTML = 'error fetching subtype local working copy listing: '+err;
+					}	
+				});
+				
+				return false;
+		}
+}
+
+var svn_list = function(){
+	var _output = dojo.byId("output");
+	
+	_output.innerHTML = 'fetching list of remote repository...';
+
+	dojo.xhrGet(
+		{
+			url: "/svn/ls",
+			handleAs: "json",
+			load: function(data){
+				//window.alert(data);
+				show_svn_ls(data);
+			},
+			error: function(theerror){
+				_output.innerHTML = 'an error occurred: '+theerror;
+			}
+		}
+	);
+
+}
+</script>
+<h3>Subversion Control Panel</h3>
+<?php
+if($this->has_svn){
+?>
+<table>
+
+<tr>
+<td>svn repository path</td>
+<td style="padding-left: 1em;"><?php echo $this->svn_path_base_remote; ?></td>
+</tr>
+
+<tr>
+<td>svn local working directory</td>
+<td style="padding-left: 1em;"><?php echo $this->svn_path_base_local; ?></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td><input type="button" value="list repository" onclick="svn_list();" />
+</tr>
+</table>
+<div id="output" style='height: 600px'>
+</div>
+<?
+}else{
+?>
+<div style="color: #900;"><p>The subversion control panel cannot be used on this installation because php svn libraries are not installed on this server.</p>
+<p> See <a href="http://www.php.net/manual/en/book.svn.php ">http://www.php.net/manual/en/book.svn.php</a> for details on installation.<p>
+</div>
+<?
+}
+?>
