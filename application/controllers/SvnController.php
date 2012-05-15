@@ -62,6 +62,7 @@ class SvnController extends Zend_Controller_Action
 
    public function indexAction(){
 	//$this->getHelper('layout')->setLayout('ajax');
+	//$this->getHelper('layout')->setLayout('default');
 	if($this->hasSvnLibraries()){
 		$this->view->has_svn = true;
 		$this->view->svn_path_base_remote  = $this->getRemoteBasePath();//$svn_path.$svn_repository;
@@ -246,6 +247,7 @@ class SvnController extends Zend_Controller_Action
 
     public function testAction()
     {
+	$this->getHelper('layout')->setLayout('ajax');
 	$this->view->subtype = $this->getRequest()->getParam('subtype');
         // action body
     }
