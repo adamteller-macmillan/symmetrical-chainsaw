@@ -251,5 +251,16 @@ class SvnController extends Zend_Controller_Action
 	$this->view->subtype = $this->getRequest()->getParam('subtype');
         // action body
     }
+    public function initiatecommitAction(){
+	$this->getHelper('layout')->setLayout('ajax');
+	$this->view->subtype = $this->getRequest()->getParam('subtype');
+	error_log("subtype=".$this->view->subtype);
+	$this->view->testmessage = "OK";
+	if(!$this->view->subtype){
+		$this->view->message = "ERROR: subtype not defined";
+	}else{
+		$this->view->message = "OK";
+	}	
+    }
 }
 ?>
