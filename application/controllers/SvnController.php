@@ -21,6 +21,11 @@ class SvnController extends Zend_Controller_Action
 	$svn_repository = $options['svnrelay']['svn_repository'];
 	return $svn_local.$svn_repository;
    }
+   public function getDigfirUrl(){
+	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
+	$options        = $bootstrap->getOptions();
+	return $options['svnrelay']['digfir_url'];
+   }
   //MT: gives recursive listing of files in remote repository using $path as url
    public function listRemote($path,$_base=''){
 	$_array = array();
@@ -261,6 +266,27 @@ class SvnController extends Zend_Controller_Action
 	}else{
 		$this->view->message = "OK";
 	}	
+    }
+    public function downloadzipAction(){
+	$this->doDownloadZip('alpha');
+    }
+    public function doDownloadZip($subtype){
+	$digfir_url	= $this->getDigfirUrl();
+	$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
+	$client   = new Zend_Http_Client($url, array(
+    			'maxredirects' => 5,
+    			'timeout'      => 30));
+	$response = $client->request('GET');
+	$body     = $response->getBody();
+	error_log($body);
+	$ctype 	  = $response->getHeader('Content-type');
+	if (is_array($ctype)) $ctype = $ctype[0];
+	$this->getHelper('layout')->setLayout('ajax');
+	$this->view->message = "OK";
+	$this->view->subtype = $subtype;
+	$this->view->url     = $url;
+	$this->view->ctype   = $ctype;
+
     }
 }
 ?>
