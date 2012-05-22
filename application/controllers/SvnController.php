@@ -268,14 +268,17 @@ class SvnController extends Zend_Controller_Action
 	}	
     }
     public function downloadzipAction(){
+	
+	error_log("======");
 	$this->doDownloadZip('alpha');
+	//$this->doRemoteLogin();
     }
     //MT: performs login to DIGFIR application
     public function doRemoteLogin(){
 	$digfir_url	= $this->getDigfirUrl();
 	$url 		= $digfir_url.'user/login';
 	$client   = new Zend_Http_Client($url, array(
-    			'maxredirects' => 0,
+    			'maxredirects' => 5,
 			'keepalive' => true,
     			'timeout'      => 30));
 	$client->setConfig(array('strictredirects' => false));
@@ -305,8 +308,9 @@ class SvnController extends Zend_Controller_Action
 	$client   = $this->doRemoteLogin();
 
 	$digfir_url	= $this->getDigfirUrl();
-	//$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
-	$url            = $digfir_url.'manuscript/test/';
+	$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
+	//$url            = $digfir_url.'manuscript/test/';
+	$client->setUri($url);
 	$response = $client->request('GET');
 	$body     = $response->getBody();
 	//error_log($body);
