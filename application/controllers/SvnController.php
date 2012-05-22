@@ -25,6 +25,11 @@ class SvnController extends Zend_Controller_Action
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	$options        = $bootstrap->getOptions();
 	return $options['svnrelay']['digfir_url'];
+   } 
+   public function getDownloadDir(){
+	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
+	$options        = $bootstrap->getOptions();
+	return $options['svnrelay']['download_dir'];
    }
   //MT: gives recursive listing of files in remote repository using $path as url
    public function listRemote($path,$_base=''){
@@ -297,7 +302,7 @@ class SvnController extends Zend_Controller_Action
 	error_log("message: ".$response->getStatus()." ".$response->getMessage());
 	$headers = $response->getHeaders();
 	foreach($headers as $name=>$value){
-	error_log("  ".$name.": ".$value);
+	//error_log("  ".$name.": ".$value);
 	}
 	error_log("result: ".$this->view->message);
 	return $client;
@@ -311,22 +316,33 @@ class SvnController extends Zend_Controller_Action
 	$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
 	//$url            = $digfir_url.'manuscript/test/';
 	$client->setUri($url);
+	$client->setStream();
 	$response = $client->request('GET');
 	$body     = $response->getBody();
 	//error_log($body);
 	//error_log($response->getMessage());
-	error_log("message: ".$response->getStatus()." ".$response->getMessage());
+	//error_log("retrieving zip file from ".$url);
+	
 	$headers = $response->getHeaders();
 	foreach($headers as $name=>$value){
-	error_log("  ".$name.": ".$value);
+	//error_log("  ".$name.": ".$value);
 	}
 	$ctype 	  = $response->getHeader('Content-type');
+	//error_log("message: ".$response->getStatus()." ".$response->getMessage()." content-type:".$ctype);
+	//error_log("stream name: ".$response->getStreamName());
+
+	$download_dir = $this->getDownloadDir();
+	$download_file = $download_dir."/".$subtype.".zip";
+	//error_log("file name: ".$download_file);
+	$this->view->copied = copy($response->getStreamName(),$download_file);
+
 	if (is_array($ctype)) $ctype = $ctype[0];
 	$this->getHelper('layout')->setLayout('ajax');
-	$this->view->message = "OK";
-	$this->view->subtype = $subtype;
-	$this->view->url     = $url;
-	$this->view->ctype   = $ctype;
+	$this->view->message  = "OK";
+	$this->view->subtype  = $subtype;
+	$this->view->url      = $url;
+	$this->view->ctype    = $ctype;
+	$this->view->filename = $download_file;
 
     }
 }
