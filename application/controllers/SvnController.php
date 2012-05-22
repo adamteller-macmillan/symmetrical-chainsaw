@@ -270,15 +270,52 @@ class SvnController extends Zend_Controller_Action
     public function downloadzipAction(){
 	$this->doDownloadZip('alpha');
     }
-    public function doDownloadZip($subtype){
+    //MT: performs login to DIGFIR application
+    public function doRemoteLogin(){
 	$digfir_url	= $this->getDigfirUrl();
-	$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
+	$url 		= $digfir_url.'user/login';
 	$client   = new Zend_Http_Client($url, array(
-    			'maxredirects' => 5,
+    			'maxredirects' => 0,
+			'keepalive' => true,
     			'timeout'      => 30));
+	$client->setConfig(array('strictredirects' => false));
+	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
+	$options        = $bootstrap->getOptions();
+	$digfir_user_email       = $options['svnrelay']['digfir_user_email'];
+	$digfir_user_password    = $options['svnrelay']['digfir_user_password'];
+	$client->setCookieJar();	
+	$client->setParameterPost('email',       $digfir_user_email);
+	$client->setParameterPost('password',    $digfir_user_password);
+	$response  = $client->request("POST");
+	$body     = $response->getBody();
+ 	$invalid  = strpos($body,"Invalid email or password");
+	$this->view->message  = $invalid ? "login unsuccesful" : "login successful";
+	error_log("logging into DIGFIR with (".$digfir_user_email.",".$digfir_user_password).")";
+	error_log("message: ".$response->getStatus()." ".$response->getMessage());
+	$headers = $response->getHeaders();
+	foreach($headers as $name=>$value){
+	error_log("  ".$name.": ".$value);
+	}
+	error_log("result: ".$this->view->message);
+	return $client;
+    } 
+
+    public function doDownloadZip($subtype){
+	
+	$client   = $this->doRemoteLogin();
+
+	$digfir_url	= $this->getDigfirUrl();
+	//$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
+	$url            = $digfir_url.'manuscript/test/';
 	$response = $client->request('GET');
 	$body     = $response->getBody();
-	error_log($body);
+	//error_log($body);
+	//error_log($response->getMessage());
+	error_log("message: ".$response->getStatus()." ".$response->getMessage());
+	$headers = $response->getHeaders();
+	foreach($headers as $name=>$value){
+	error_log("  ".$name.": ".$value);
+	}
 	$ctype 	  = $response->getHeader('Content-type');
 	if (is_array($ctype)) $ctype = $ctype[0];
 	$this->getHelper('layout')->setLayout('ajax');
