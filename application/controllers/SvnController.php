@@ -7,6 +7,7 @@ class SvnController extends Zend_Controller_Action
     {
         /* Initialize action controller here */
     }
+  
    public function getRemoteBasePath(){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	$options        = $bootstrap->getOptions();
@@ -232,6 +233,26 @@ class SvnController extends Zend_Controller_Action
 		$this->view->message = "php svn libraries not installed";
 	}
    }
+   function list_directory($dirname){
+	$_array = array();
+	/**
+	
+    	$_ls    = scandir($path);
+        foreach($_ls as $_f)  {
+            if ($_f === '.' || $_f === '..' || $_f=='.svn') {
+                continue; }
+	    if(is_dir($_f)){
+		$_subpath = $_base.$_f.'/';
+		$_array[] = $_subpath;
+            	$_array   = array_merge($_array,$this->get_subdir_files($path."/".$_f,$_subpath));
+            }else{
+		$_array[] = $_base.$_f;
+	    }
+    	}   
+    	
+	**/
+	return $_array;
+   }
 
    function delete_directory($dirname) {
 			if (is_dir($dirname)) {
@@ -245,7 +266,7 @@ class SvnController extends Zend_Controller_Action
 						if (!is_dir($dirname."/".$file)) {
 							unlink($dirname."/".$file);
 						} else {
-							delete_directory($dirname.'/'.$file);    
+							$this->delete_directory($dirname.'/'.$file);    
 						}
 					}
 			}
@@ -312,6 +333,21 @@ class SvnController extends Zend_Controller_Action
 	
 	$client   = $this->doRemoteLogin();
 
+	$download_dir = $this->getDownloadDir();
+	$download_file = $download_dir."/".$subtype.".zip";
+
+	if(file_exists($download_file)){
+		unlink($download_file);
+		error_log("deleting previous zip file ".$download_file);
+	}
+
+	$extract_dir = $download_dir."/".$subtype;
+	if(file_exists($extract_dir)){
+		error_log("deleting directory ".$extract_dir);
+		$this->delete_directory($extract_dir);
+			
+	}
+
 	$digfir_url	= $this->getDigfirUrl();
 	$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
 	//$url            = $digfir_url.'manuscript/test/';
@@ -331,10 +367,24 @@ class SvnController extends Zend_Controller_Action
 	//error_log("message: ".$response->getStatus()." ".$response->getMessage()." content-type:".$ctype);
 	//error_log("stream name: ".$response->getStreamName());
 
-	$download_dir = $this->getDownloadDir();
-	$download_file = $download_dir."/".$subtype.".zip";
+	
 	//error_log("file name: ".$download_file);
 	$this->view->copied = copy($response->getStreamName(),$download_file);
+
+	$zip = new ZipArchive;
+	$res = $zip->open($download_file);
+	if ($res === TRUE) {
+		
+		error_log("creating directory ".$extract_dir);
+		mkdir($extract_dir);
+		
+         	$zip->extractTo($extract_dir."/");
+         	$zip->close();
+         	$this->view->extracted = 1;
+     	} else {
+         	$this->view->extracted = 0;
+		error_log("zip extract error: ".$res." for ".$download_file);
+     	}
 
 	if (is_array($ctype)) $ctype = $ctype[0];
 	$this->getHelper('layout')->setLayout('ajax');
