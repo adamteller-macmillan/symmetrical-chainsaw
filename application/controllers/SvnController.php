@@ -50,16 +50,19 @@ class SvnController extends Zend_Controller_Action
 	return $_array;
    }
    public function get_subdir_files($path,$_base='') {
+	//error_log("path: ".$path);
 	$_array = array();
     	$_ls    = scandir($path);
         foreach($_ls as $_f)  {
             if ($_f === '.' || $_f === '..' || $_f=='.svn') {
                 continue; }
-	    if(is_dir($_f)){
+	    if(is_dir($path."/".$_f)){
+		//error_log("dir: ".$_f);
 		$_subpath = $_base.$_f.'/';
 		$_array[] = $_subpath;
             	$_array   = array_merge($_array,$this->get_subdir_files($path."/".$_f,$_subpath));
             }else{
+		//error_log("file: ".$_f);
 		$_array[] = $_base.$_f;
 	    }
     	}   
@@ -381,6 +384,12 @@ class SvnController extends Zend_Controller_Action
          	$zip->extractTo($extract_dir."/");
          	$zip->close();
          	$this->view->extracted = 1;
+
+		$_dir_listing = $this->get_subdir_files($extract_dir);
+		foreach($_dir_listing as $_listing){
+			//error_log($_listing);
+		}
+		$this->view->dirlisting = $_dir_listing;
      	} else {
          	$this->view->extracted = 0;
 		error_log("zip extract error: ".$res." for ".$download_file);
