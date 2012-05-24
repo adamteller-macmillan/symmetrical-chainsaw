@@ -49,18 +49,57 @@ class SvnController extends Zend_Controller_Action
    public function updateLocalWorkingCopy($subtype){
 	$svn_path_subtype_local = $this->getLocalBasePath($subtype);
 	$svn_subtype_updated    = svn_update($svn_path_subtype_local);
-        $svn_path_subtype_local = $this->getLocalBasePath($subtype);
+        
 	$_extracted 		= $this->getDownloadDir($subtype);
+	error_log("updating working copy at ".$svn_path_subtype_local);
 	if(file_exists($_extracted)){
 		if($svn_subtype_updated){
+			
+		
 			//MT: pseudocode for commit of existing subtype files
 			//get list of files in existing working copy
 			//get list of files in extracted directory
 			//do comparison to find new files to add, old files to delete
 			//copy files from old to new, forcing the write for changed files
+			
+			$_files_to_add  		= NULL;
+			$_files_to_delete 		= NULL;
+			error_log("comparing local working copy to extracted dir ".$_extracted);
+			$_diff 		= $this->compare_directories($_extracted,$svn_path_subtype_local);
+			$this->view->diff = $_diff;
+			if($_diff){
+				$_files_to_add  		= $_diff[0];
+				$_files_to_delete	 	= $_diff[1];
+				error_log("num files to add: ".count($_files_to_add));
+				error_log("num files to delete: ".count($_files_to_delete));
+			}
+			
+			$this->view->copied    = $this->copy_directory($_extracted,$svn_path_subtype_local);
+			if($_files_to_add){
+				foreach($_files_to_add as $_f){
+					$_add_path = $svn_path_subtype_local."/".$_f;
+					error_log("svn add ".$_add_path);
+					@svn_add($_add_path);
+				}
+			}
+			//TO BE DONE
 			//iterate and svn delete old files (in reverse order, going up the directory tree)
-			//iterate add svn add new files (suppressing errors)
-			//svn commit result
+
+			error_log("svn commiting ".$svn_path_subtype_local);
+
+			//MT: error suppression from this error which may be due to a bug in the API
+			//https://bugs.php.net/bug.php?id=60583
+			/**
+			[Thu May 24 17:06:20 2012] [error] [client 127.0.0.1] PHP Warning:  svn_commit(): svn error(s) occured\n200031 (Attempted to write to readonly SQLite db) Commit failed (details follow):\n200031 (Attempted to write to readonly SQLite db) attempt to write a readonly database\n200031 (Attempted to write to readonly SQLite db) attempt to write a readonly database\n in /var/www/bfw-svnrelay/application/controllers/SvnController.php on line 89
+			NOTE file is added correctly but generates error on commit, but then shows up in repository
+			**/
+
+			$svn_subtype_committed  = @svn_commit("commiting updated subtype ".$subtype,array($svn_path_subtype_local));
+			//$this->view->committed = $svn_subtype_committed;
+
+			//This generates an 'E' status on the command line, but seems to make things work
+			$svn_subtype_updated    = @svn_update($svn_path_subtype_local);
+			//return $svn_subtype_committed[0];
 		}
 	}
 	return $svn_subtype_updated;
@@ -161,7 +200,21 @@ class SvnController extends Zend_Controller_Action
 	}
 	return $_copied;
     }
+   public function compare_directories($path1,$path2){
+	
+	if(file_exists($path1) && file_exists($path2)){
+		$_e_1  = array();
+		$_e_2  = array();
 
+		$_ls_1 = $this->get_subdir_files($path1);
+		$_ls_2 = $this->get_subdir_files($path2);
+
+		return array(array_diff($_ls_1,$_ls_2),array_diff($_ls_2,$_ls_1));
+
+	}
+	return NULL;
+
+   }
 
    public function hasSvnLibraries(){
 	return function_exists("svn_add");
