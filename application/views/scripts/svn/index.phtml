@@ -4,7 +4,7 @@ var svn_status_constants = ['1','2','?','3','A','!','D','A','M','9','C','I','~',
 var show_svn_ls = function(list){
 	var _output = dojo.byId("output");
 	_output.innerHTML = '';
-	var _table = dojo.create('table',{style:'width: 400px;background-color: #ffc; float: left'},_output);    
+	var _table = dojo.create('table',{style:'width: 600px;background-color: #ffc; float: left'},_output);    
 	var _trx   = dojo.create("tr",{},_table);
 	var _tdx0  = dojo.create("td",{innerHTML:"subtype",style:"color: #999;font-size: smaller; padding-left: 0.5em;"},_trx);
 	var _tdx1  = dojo.create("td",{innerHTML:"rev",style:"color: #999;font-size: smaller; padding-left:0.5em;"},_trx);
@@ -19,14 +19,50 @@ var show_svn_ls = function(list){
 			var _td3   = dojo.create("td",{},_tr);
 			var _td4   = dojo.create("td",{},_tr);
 			var _td5   = dojo.create("td",{},_tr);
+			var _td6   = dojo.create("td",{},_tr);
 
 			var _a3    = dojo.create('a', {href:'#',innerHTML:'remote',onclick: svn_subtype_ls_remote_click_fn(_item) },_td3);
 			var _a4    = dojo.create('a', {href:'#',innerHTML:'local ',onclick: svn_subtype_ls_local_click_fn(_item) },_td4);
 			var _a5    = dojo.create('a', {href:'#',innerHTML:'status',onclick: svn_subtype_status_local_click_fn(_item)},_td5);
+			var _a6    = dojo.create('a', {href:'#',innerHTML:'delete',onclick: svn_subtype_delete_click_fn(_item)}, _td6);
+			
 		};
 	}
 
 	dojo.create('div',{id: 'subtype_display',style:'margin-left: 1em; float: left; background-color: #fff;',innerHTML: ''},_output);
+}
+var svn_subtype_delete_click_fn = function(_item){
+	return function(){ 
+		if(window.confirm("Delete subtype "+_item+" from repository")){
+				var     _subtype_display = dojo.byId('subtype_display');
+				_subtype_display.innerHTML = '';
+				var     _h4 = dojo.create('h4',{innerHTML:_item,style:'margin-top: 0.2em'},_subtype_display);
+				var     _sm = dojo.create('div',{innerHTML:'',id:'subtype_display_message'},_subtype_display);
+
+				dojo.xhrGet({
+					url: '/svn/delete/subtype/'+_item,
+					handleAs: 'json',
+					load: function(data){
+						_sm.innerHTML = 'subtype deleted';
+						
+						//window.alert("deleted");
+						if(data){
+							
+							var _sx = data['message'];
+							if(data['deleted']){
+								_sx = _sx + " (revision: "+data['deleted']+")";
+							}
+							_sm.innerHTML = _sx;
+						}
+						
+					},
+					error: function(err){
+						
+						_sm.innerHTML = 'error deleting subtype: '+err;
+					}	
+				}); 
+		}
+	}
 }
 var svn_subtype_ls_remote_click_fn = function(_item){
 		return function(){

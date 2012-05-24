@@ -8,19 +8,27 @@ class SvnController extends Zend_Controller_Action
         /* Initialize action controller here */
     }
   
-   public function getRemoteBasePath(){
+   public function getRemoteBasePath($subtype=null){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	$options        = $bootstrap->getOptions();
 	$svn_path       = $options['svnrelay']['svn_path'];
 	$svn_repository = $options['svnrelay']['svn_repository'];
-	return $svn_path.$svn_repository;
+	$_path = $svn_path.$svn_repository;
+	if($subtype){
+		$_path = $_path .= "/".$subtype;
+	}
+	return $_path;
    }
-   public function getLocalBasePath(){
+   public function getLocalBasePath($subtype=null){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	$options        = $bootstrap->getOptions();
 	$svn_local      = $options['svnrelay']['svn_local'];
 	$svn_repository = $options['svnrelay']['svn_repository'];
-	return $svn_local.$svn_repository;
+	$_path = $svn_local.$svn_repository;
+	if($subtype){
+		$_path = $_path .= "/".$subtype;
+	}
+	return $_path;
    }
    public function getDigfirUrl(){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
@@ -32,8 +40,31 @@ class SvnController extends Zend_Controller_Action
 	$options        = $bootstrap->getOptions();
 	return $options['svnrelay']['download_dir'];
    }
+   public function createRemoteRepository($subtype){
+	$svn_subtype_committed  = null;
+	$svn_path_subtype_local = $this->getLocalBasePath($subtype);
+	//MT: subtype does not exist in remote repository
+	//MT: first check to see if local working copy dir exists
+	if(file_exists($svn_path_subtype_local)){
+		//delete working copy dir---for error failover in case dir has been created by accident without checkin
+		//note: must actually do this recursively just in case
+		//just delete dir for now
+		$this->delete_directory($svn_path_subtype_local);
+	}
+	//MT: this condition should always be true if dir was deleted as per prev step---leave in for now
+	if(!file_exists($svn_path_subtype_local)){
+		//create local working copy directory
+		//check in to remote repository
+		$svn_subtype_mkdir     = svn_mkdir($svn_path_subtype_local);
+		$svn_subtype_committed = svn_commit("created subtype ".$subtype,array($svn_path_subtype_local));
+	}
+	return $svn_subtype_committed;
+   }
+
+
   //MT: gives recursive listing of files in remote repository using $path as url
    public function listRemote($path,$_base=''){
+	error_log("listRemote path=".$path);
 	$_array = array();
 	$_ls = svn_ls($path);
 	foreach($_ls as $_key=>$_value){
@@ -73,6 +104,14 @@ class SvnController extends Zend_Controller_Action
    public function hasSvnLibraries(){
 	return function_exists("svn_add");
    }
+   public function lsRemote(){
+	return svn_ls($this->getRemoteBasePath());
+   }
+   public function repositoryExists($name){
+	$_ls = $this->lsRemote();
+	$this->view->ls = $_ls;
+	return array_key_exists($name,$_ls);
+   }
 
    public function indexAction(){
 	//$this->getHelper('layout')->setLayout('ajax');
@@ -87,8 +126,23 @@ class SvnController extends Zend_Controller_Action
    }
    public function lsAction(){
         $this->getHelper('layout')->setLayout('ajax');
-	$this->view->svn_ls = svn_ls($this->getRemoteBasePath());
+	$this->view->svn_ls = $this->lsRemote();
 	$this->view->message = "svn list successful";
+   }
+   public function deleteAction(){
+	$this->getHelper('layout')->setLayout('ajax');
+	$this->view->subtype 		   = $this->getRequest()->getParam('subtype');
+	$this->view->svn_path_base_local   = $this->getLocalBasePath($this->view->subtype);
+	$svn_delete	   		   = svn_delete($this->view->svn_path_base_local,TRUE);
+	if($svn_delete){
+		$this->view->svn_committed         = svn_commit("deleting subtype ".$this->view->subtype,array($this->view->svn_path_base_local));
+		$this->view->message = "svn deleted successful";
+		$this->view->deleted = $this->view->svn_committed[0];
+	}else{
+		$this->view->svn_committed         = 0;
+		$this->view->message = "svn not deleted";
+		$this->view->deleted = "0";
+	}
    }
    public function listAction(){
 	$this->subtype = $this->getRequest()->getParam('subtype');
@@ -394,6 +448,17 @@ class SvnController extends Zend_Controller_Action
          	$this->view->extracted = 0;
 		error_log("zip extract error: ".$res." for ".$download_file);
      	}
+	try{
+		$this->view->remoteexists = $this->repositoryExists($subtype);
+		if(!$this->view->remoteexists){
+			$this->view->svn_subtype_created     = $this->createRemoteRepository($subtype);	
+		}
+		
+	}catch(Exception $e){
+		error_log($e);
+	}
+
+
 
 	if (is_array($ctype)) $ctype = $ctype[0];
 	$this->getHelper('layout')->setLayout('ajax');
