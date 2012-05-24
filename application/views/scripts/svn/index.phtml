@@ -12,7 +12,7 @@ var show_svn_ls = function(list){
 
 	if(list){
 		for(_item in list){
-			var _tr    = dojo.create("tr",{},_table);
+			var _tr    = dojo.create("tr",{id:'subtype_tr_'+_item},_table);
 			var _td0   = dojo.create("td",{innerHTML: _item,style:"padding-left:0.5em;"},_tr);
 			var _td1   = dojo.create("td",{innerHTML: list[_item]['created_rev'], style:"padding-left:0.5em;"},_tr); 
 			var _td2   = dojo.create("td",{innerHTML: list[_item]['time'], style:"padding-left:0.5em;"},_tr); 
@@ -51,6 +51,8 @@ var svn_subtype_delete_click_fn = function(_item){
 							var _sx = data['message'];
 							if(data['deleted']){
 								_sx = _sx + " (revision: "+data['deleted']+")";
+								var _tr = dojo.byId('subtype_tr_'+_item);
+								_tr.parentNode.removeChild(_tr);
 							}
 							_sm.innerHTML = _sx;
 						}

@@ -3,6 +3,8 @@
 class SvnController extends Zend_Controller_Action
 {
 
+  
+
     public function init()
     {
         /* Initialize action controller here */
@@ -35,30 +37,61 @@ class SvnController extends Zend_Controller_Action
 	$options        = $bootstrap->getOptions();
 	return $options['svnrelay']['digfir_url'];
    } 
-   public function getDownloadDir(){
+   public function getDownloadDir($subtype=null){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	$options        = $bootstrap->getOptions();
-	return $options['svnrelay']['download_dir'];
+	$_dir           = $options['svnrelay']['download_dir'];
+	if($subtype){
+		$_dir .= "/".$subtype;
+	}
+	return $_dir;
    }
-   public function createRemoteRepository($subtype){
+   public function updateLocalWorkingCopy($subtype){
+	$svn_path_subtype_local = $this->getLocalBasePath($subtype);
+	$svn_subtype_updated    = svn_update($svn_path_subtype_local);
+        $svn_path_subtype_local = $this->getLocalBasePath($subtype);
+	$_extracted 		= $this->getDownloadDir($subtype);
+	if(file_exists($_extracted)){
+		if($svn_subtype_updated){
+			//MT: pseudocode for commit of existing subtype files
+			//get list of files in existing working copy
+			//get list of files in extracted directory
+			//do comparison to find new files to add, old files to delete
+			//copy files from old to new, forcing the write for changed files
+			//iterate and svn delete old files (in reverse order, going up the directory tree)
+			//iterate add svn add new files (suppressing errors)
+			//svn commit result
+		}
+	}
+	return $svn_subtype_updated;
+   }
+   public function createRemoteRepository($subtype,$fromextracted=true){
 	$svn_subtype_committed  = null;
 	$svn_path_subtype_local = $this->getLocalBasePath($subtype);
 	//MT: subtype does not exist in remote repository
 	//MT: first check to see if local working copy dir exists
 	if(file_exists($svn_path_subtype_local)){
 		//delete working copy dir---for error failover in case dir has been created by accident without checkin
-		//note: must actually do this recursively just in case
-		//just delete dir for now
 		$this->delete_directory($svn_path_subtype_local);
 	}
 	//MT: this condition should always be true if dir was deleted as per prev step---leave in for now
 	if(!file_exists($svn_path_subtype_local)){
 		//create local working copy directory
 		//check in to remote repository
-		$svn_subtype_mkdir     = svn_mkdir($svn_path_subtype_local);
+		
+		if($fromextracted){
+			$_extracted = $this->getDownloadDir($subtype);
+			if(file_exists($_extracted)){
+				//$svn_subtype_mkdir     = svn_mkdir($svn_path_subtype_local);
+				$this->view->copied    = $this->copy_directory($_extracted,$svn_path_subtype_local);
+				$_added                = svn_add($svn_path_subtype_local);
+			}
+		}else if(!file_exists($svn_path_subtype_local)){
+			$svn_subtype_mkdir     = svn_mkdir($svn_path_subtype_local);
+		}
 		$svn_subtype_committed = svn_commit("created subtype ".$subtype,array($svn_path_subtype_local));
 	}
-	return $svn_subtype_committed;
+	return $svn_subtype_committed[0];
    }
 
 
@@ -98,6 +131,35 @@ class SvnController extends Zend_Controller_Action
 	    }
     	}   
     	return $_array;
+    }
+    public function copy_directory($path1,$path2){
+	$_copied = NULL;
+	if(file_exists($path1)){
+		$_copied = array();
+		if(!file_exists($path2)){
+			//$_copied[$path2] = @mkdir($path2);
+			@mkdir($path2);
+		}else{
+			//$_copied[$path2] = TRUE;
+		}
+		if(file_exists($path2) && is_writable($path2)){
+			$_ls = $this->get_subdir_files($path1);
+			foreach($_ls as $_f){
+				$_spath = $path1."/".$_f;
+				$_dpath = $path2."/".$_f;
+				if(is_dir($_spath)){
+					if(!file_exists($_dpath)){
+						$_copied[$_f] = @mkdir($_dpath);
+					}else{
+						$_copied[$_f] = TRUE;
+					}
+				}else{	
+					$_copied[$_f] = @copy($_spath,$_dpath);	
+				}
+			}	
+		}
+	}
+	return $_copied;
     }
 
 
@@ -451,7 +513,9 @@ class SvnController extends Zend_Controller_Action
 	try{
 		$this->view->remoteexists = $this->repositoryExists($subtype);
 		if(!$this->view->remoteexists){
-			$this->view->svn_subtype_created     = $this->createRemoteRepository($subtype);	
+			$this->view->remotecreated = $this->createRemoteRepository($subtype);	
+		}else{
+			$this->view->localupdated  = $this->updateLocalWorkingCopy($subtype);
 		}
 		
 	}catch(Exception $e){
