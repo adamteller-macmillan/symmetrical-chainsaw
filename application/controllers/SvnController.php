@@ -468,8 +468,13 @@ class SvnController extends Zend_Controller_Action
     public function downloadzipAction(){
 	
 	error_log("======");
-	$this->doDownloadZip('alpha');
-	//$this->doRemoteLogin();
+	$subtype = $this->getRequest()->getParam('subtype');
+	
+	if($subtype){
+		$this->doDownloadZip($subtype);
+	}else{
+		$this->view->message = "The subtype must be specified.";
+	}
     }
     //MT: performs login to DIGFIR application
     public function doRemoteLogin(){
@@ -504,6 +509,7 @@ class SvnController extends Zend_Controller_Action
     public function doDownloadZip($subtype){
 	
 	$client   = $this->doRemoteLogin();
+	$retarray = array();
 
 	$download_dir = $this->getDownloadDir();
 	$download_file = $download_dir."/".$subtype.".zip";
@@ -584,6 +590,21 @@ class SvnController extends Zend_Controller_Action
 	$this->view->url      = $url;
 	$this->view->ctype    = $ctype;
 	$this->view->filename = $download_file;
+
+	$retarray['message']          = $this->view->message;
+	$retarray['subtype']          = $this->view->subtype;
+	$retarray['url']              = $this->view->url;
+	$retarray['ctype']            = $this->view->ctype;
+	$retarray['filename']         = $this->view->filename;
+	$retarray['copied']           = $this->view->copied;
+	$retarray['extracted']        = $this->view->extracted;
+	$retarray['remotecreated']    = $this->view->remotecreated;
+	$retarray['localupdated']     = $this->view->localupdated;
+	$retarray['diff']	      = $this->view->diff;
+	$retarray['committed']	      = $this->view->committed;
+
+	$this->view->msg =	json_encode($retarray);
+
 
     }
 }
