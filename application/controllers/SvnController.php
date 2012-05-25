@@ -456,6 +456,7 @@ class SvnController extends Zend_Controller_Action
 
     public function testAction()
     {
+	error_log("testAction called");
 	$this->getHelper('layout')->setLayout('ajax');
 	$this->view->subtype = $this->getRequest()->getParam('subtype');
         // action body
@@ -475,9 +476,14 @@ class SvnController extends Zend_Controller_Action
 	
 	error_log("======");
 	$subtype = $this->getRequest()->getParam('subtype');
-	
+	$digfir  = $this->getRequest()->getParam('digfir');
+	$this->view->digfir = $digfir;
+	if($digfir){
+		error_log("processing download request from digfir...");
+
+	}
 	if($subtype){
-		$this->doDownloadZip($subtype);
+		$this->view->success = $this->doDownloadZip($subtype);
 	}else{
 		$this->view->message = "The subtype must be specified.";
 	}
@@ -610,6 +616,8 @@ class SvnController extends Zend_Controller_Action
 	$retarray['committed']	      = $this->view->committed;
 
 	$this->view->msg =	json_encode($retarray);
+
+	return 1;
 
 
     }
