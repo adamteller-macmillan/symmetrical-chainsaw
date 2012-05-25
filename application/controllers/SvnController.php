@@ -82,8 +82,14 @@ class SvnController extends Zend_Controller_Action
 					@svn_add($_add_path);
 				}
 			}
-			//TO BE DONE
-			//iterate and svn delete old files (in reverse order, going up the directory tree)
+			if($_files_to_delete){
+				foreach($_files_to_delete as $_f){
+					$_delete_path = $svn_path_subtype_local."/".$_f;
+					error_log("svn delete ".$_delete_path);
+					@svn_delete($_delete_path,TRUE);
+				}
+			}
+			
 
 			error_log("svn commiting ".$svn_path_subtype_local);
 
