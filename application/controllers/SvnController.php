@@ -608,10 +608,11 @@ class SvnController extends Zend_Controller_Action
 	$retarray['url']              = $this->view->url;
 	$retarray['ctype']            = $this->view->ctype;
 	$retarray['filename']         = $this->view->filename;
-	$retarray['copied']           = $this->view->copied;
+	
 	$retarray['extracted']        = $this->view->extracted;
 	$retarray['remotecreated']    = $this->view->remotecreated;
 	$retarray['localupdated']     = $this->view->localupdated;
+	$retarray['copied']           = $this->view->copied;
 	$retarray['diff']	      = $this->view->diff;
 	$retarray['committed']	      = $this->view->committed;
 
