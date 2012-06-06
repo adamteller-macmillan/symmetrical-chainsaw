@@ -246,14 +246,28 @@ class SvnController extends Zend_Controller_Action
 	}
    }
    public function infoAction(){
+
+	//$this->do_repository = 1;//$this->getRequest()->getParam('dorepository');
+	
+	$this->do_repository = 1;
 	$this->getHelper('layout')->setLayout('ajax');
+	$this->view->svn_path_base_remote  = $this->getRemoteBasePath();//$svn_path.$svn_repository;
+	$this->view->svn_path_base_local   = $this->getLocalBasePath();//$svn_local.$svn_repository;
+	
 	if($this->hasSvnLibraries()){
+		$this->message       = "OK";
 		$this->view->has_svn = true;
-		$this->view->svn_path_base_remote  = $this->getRemoteBasePath();//$svn_path.$svn_repository;
-		$this->view->svn_path_base_local   = $this->getLocalBasePath();//$svn_local.$svn_repository;
+	
+		//error_log(json_encode($this->lsRemote(),TRUE));
+		if($this->do_repository){
+			//$this->view->svn_ls =json_encode($this->lsRemote(),TRUE);
+		}
+		$this->view->svn_ls = "1";
 	}else{
 		$this->view->has_svn = false;
+		$this->view->message = "php svn libraries not installed";
 	}
+	
    }
    public function lsAction(){
         $this->getHelper('layout')->setLayout('ajax');
