@@ -245,6 +245,16 @@ class SvnController extends Zend_Controller_Action
 		$this->view->has_svn = false;
 	}
    }
+   public function infoAction(){
+	$this->getHelper('layout')->setLayout('ajax');
+	if($this->hasSvnLibraries()){
+		$this->view->has_svn = true;
+		$this->view->svn_path_base_remote  = $this->getRemoteBasePath();//$svn_path.$svn_repository;
+		$this->view->svn_path_base_local   = $this->getLocalBasePath();//$svn_local.$svn_repository;
+	}else{
+		$this->view->has_svn = false;
+	}
+   }
    public function lsAction(){
         $this->getHelper('layout')->setLayout('ajax');
 	$this->view->svn_ls = $this->lsRemote();
