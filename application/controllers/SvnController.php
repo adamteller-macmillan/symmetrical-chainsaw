@@ -229,8 +229,8 @@ class SvnController extends Zend_Controller_Action
 	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	$options        = $bootstrap->getOptions();
 	//return $options['svnrelay']['digfir_url'];
-	$_username = $options['svnrelay']['digfir_user_name'];
-	$_password = $options['svnrelay']['digfir_user_password'];
+	$_username = $options['svnrelay']['svn_auth_username'];
+	$_password = $options['svnrelay']['svn_auth_password'];
 	if($_username){
 		svn_auth_set_parameter(SVN_AUTH_PARAM_DEFAULT_USERNAME, $_username);
 		svn_auth_set_parameter(SVN_AUTH_PARAM_DEFAULT_PASSWORD, $_password);
@@ -565,6 +565,7 @@ class SvnController extends Zend_Controller_Action
 	}
 
 	$extract_dir = $download_dir."/".$subtype;
+	
 	if(file_exists($extract_dir)){
 		error_log("deleting directory ".$extract_dir);
 		$this->delete_directory($extract_dir);
@@ -593,7 +594,7 @@ class SvnController extends Zend_Controller_Action
 	
 	//error_log("file name: ".$download_file);
 	$this->view->copied = copy($response->getStreamName(),$download_file);
-
+	error_log("copied zip file to ".$download_file);
 	$zip = new ZipArchive;
 	$res = $zip->open($download_file);
 	if ($res === TRUE) {
