@@ -226,6 +226,15 @@ class SvnController extends Zend_Controller_Action
 	return function_exists("svn_add");
    }
    public function lsRemote(){
+	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
+	$options        = $bootstrap->getOptions();
+	//return $options['svnrelay']['digfir_url'];
+	$_username = $options['svnrelay']['digfir_user_name'];
+	$_password = $options['svnrelay']['digfir_user_password'];
+	if($_username){
+		svn_auth_set_parameter(SVN_AUTH_PARAM_DEFAULT_USERNAME, $_username);
+		svn_auth_set_parameter(SVN_AUTH_PARAM_DEFAULT_PASSWORD, $_password);
+	}
 	return svn_ls($this->getRemoteBasePath());
    }
    public function repositoryExists($name){
