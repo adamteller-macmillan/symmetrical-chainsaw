@@ -260,9 +260,9 @@ class SvnController extends Zend_Controller_Action
 	
 		//error_log(json_encode($this->lsRemote(),TRUE));
 		if($this->do_repository){
-			//$this->view->svn_ls =json_encode($this->lsRemote(),TRUE);
+			$this->view->svn_ls =json_encode($this->lsRemote(),TRUE);
 		}
-		$this->view->svn_ls = "1";
+		//$this->view->svn_ls = "1";
 	}else{
 		$this->view->has_svn = false;
 		$this->view->message = "php svn libraries not installed";
