@@ -50,10 +50,16 @@ class SvnController extends Zend_Controller_Action
 	$svn_path_subtype_local 	= $this->getLocalBasePath($subtype);
 	$svn_subtype_current_version    = svn_update($svn_path_subtype_local);
         $svn_subtype_new_version        = $svn_subtype_current_version;
-	$svn_subtype_updated            = "0";
+	$svn_subtype_updated            = 0;
 	$svn_update_error               = 0;
 	$svn_subtype_committed          = null;
 	$_commited			= false;
+	$files_deleted			= array();
+	$files_added			= array();
+
+	//MT: this must be set to TRUE in order to avoid conflict errors for commits involving both deletions and additions/modifications
+	$_do_separate_commit_for_deletions = TRUE;
+
 	error_log("svn update found current version of ".$subtype." to be ".$svn_subtype_current_version);
 
 	$_extracted 		= $this->getDownloadDir($subtype);
@@ -88,8 +94,9 @@ class SvnController extends Zend_Controller_Action
 					
 					$_deleted = @svn_delete($_delete_path,TRUE);
 					error_log("svn delete ".$_delete_path." ".$_deleted);
+					$files_deleted[] = $_f;
 				}
-				if($_deleted){
+				if($_deleted && $_do_separate_commit_for_deletions){
 					//MT: need to do this commit after files deleted to avoid conflicts that arise from deletions
 					//when deletions are also accompanied by additions and/or modifications
 					//such conflicts result in statuses in form
@@ -114,6 +121,7 @@ class SvnController extends Zend_Controller_Action
 					$_add_path = $svn_path_subtype_local."/".$_f;
 					error_log("svn add ".$_add_path);
 					@svn_add($_add_path);
+					$files_added[] = $_f;
 				}
 			}
 			
@@ -171,6 +179,8 @@ class SvnController extends Zend_Controller_Action
 						}
 					}
 	}
+	$this->view->filesadded   = $files_added;
+	$this->view->filesdeleted = $files_deleted;
 	return array($svn_subtype_updated, $svn_subtype_current_version, $svn_subtype_new_version,$svn_update_error);
    }
    public function createRemoteRepository($subtype,$fromextracted=true){
@@ -688,6 +698,7 @@ class SvnController extends Zend_Controller_Action
 			$this->view->localupdated  = $_update_result[0];
 			$this->view->oldversion    = $_update_result[1];
 			$this->view->newversion    = $_update_result[2];
+			$this->view->updateerror   = $_update_result[3];
 			
 		}
 		
@@ -699,7 +710,7 @@ class SvnController extends Zend_Controller_Action
 
 	if (is_array($ctype)) $ctype = $ctype[0];
 	$this->getHelper('layout')->setLayout('ajax');
-	$this->view->message  = "OK";
+	$this->view->message  = $this->view->updateerror ? "ERROR" : "OK";
 	$this->view->subtype  = $subtype;
 	$this->view->url      = $url;
 	$this->view->ctype    = $ctype;
@@ -712,13 +723,16 @@ class SvnController extends Zend_Controller_Action
 	$retarray['filename']         = $this->view->filename;
 	
 	$retarray['extracted']        = $this->view->extracted;
-	$retarray['remotecreated']    = $this->view->remotecreated ? $this->view->remotecreated : "0";
+	$retarray['remotecreated']    = $this->view->remotecreated ? $this->view->remotecreated : 0;
 	$retarray['localupdated']     = $this->view->localupdated;
 	$retarray['oldversion']       = $this->view->oldversion;
 	$retarray['newversion']       = $this->view->newversion;
 	$retarray['copied']           = $this->view->copied;
 	$retarray['diff']	      = $this->view->diff;
 	$retarray['committed']	      = $this->view->committed;
+	$retarray['filesadded']       = $this->view->filesadded;
+	$retarray['filesdeleted']     = $this->view->filesdeleted;
+	$retarray['statusafter']      = $this->view->statusafter;
 
 	$this->view->msg =	json_encode($retarray);
 
