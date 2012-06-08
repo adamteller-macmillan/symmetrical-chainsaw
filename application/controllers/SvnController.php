@@ -47,13 +47,19 @@ class SvnController extends Zend_Controller_Action
 	return $_dir;
    }
    public function updateLocalWorkingCopy($subtype){
-	$svn_path_subtype_local = $this->getLocalBasePath($subtype);
-	$svn_subtype_updated    = svn_update($svn_path_subtype_local);
-        
+	$svn_path_subtype_local 	= $this->getLocalBasePath($subtype);
+	$svn_subtype_current_version    = svn_update($svn_path_subtype_local);
+        $svn_subtype_new_version        = $svn_subtype_current_version;
+	$svn_subtype_updated            = "0";
+	$svn_update_error               = 0;
+	$svn_subtype_committed          = null;
+	$_commited			= false;
+	error_log("svn update found current version of ".$subtype." to be ".$svn_subtype_current_version);
+
 	$_extracted 		= $this->getDownloadDir($subtype);
 	error_log("updating working copy at ".$svn_path_subtype_local);
 	if(file_exists($_extracted)){
-		if($svn_subtype_updated){
+		if($svn_subtype_current_version){
 			
 		
 			//MT: pseudocode for commit of existing subtype files
@@ -74,7 +80,35 @@ class SvnController extends Zend_Controller_Action
 				error_log("num files to delete: ".count($_files_to_delete));
 			}
 			
+			
+			if($_files_to_delete){
+				$_deleted = 0;
+				foreach($_files_to_delete as $_f){
+					$_delete_path = $svn_path_subtype_local."/".$_f;
+					
+					$_deleted = @svn_delete($_delete_path,TRUE);
+					error_log("svn delete ".$_delete_path." ".$_deleted);
+				}
+				if($_deleted){
+					//MT: need to do this commit after files deleted to avoid conflicts that arise from deletions
+					//when deletions are also accompanied by additions and/or modifications
+					//such conflicts result in statuses in form
+					// !     C deleted_file.html
+     					// 	 >   local delete, incoming delete upon update
+					// see http://triopter.com/archive/resolving-local-delete-incoming-delete-upon-update-subversion-tree-conflicts/
+					// must be resolved on command line by
+					// $ touch deleted_file.html
+					// $ svn revert deleted_file.html
+					// $ rm deleted_file.html
+					// which results in a cleared status
+					error_log("svn commiting deleted files for ".$svn_path_subtype_local);
+					$svn_subtype_committed  = @svn_commit("commiting subtype ".$subtype." for deleted files.",array($svn_path_subtype_local));
+					$_commited		= true;
+				}
+			}
+			//MT: this must come before the add
 			$this->view->copied    = $this->copy_directory($_extracted,$svn_path_subtype_local);
+			//MT: must come last after delete, copy
 			if($_files_to_add){
 				foreach($_files_to_add as $_f){
 					$_add_path = $svn_path_subtype_local."/".$_f;
@@ -82,33 +116,62 @@ class SvnController extends Zend_Controller_Action
 					@svn_add($_add_path);
 				}
 			}
-			if($_files_to_delete){
-				foreach($_files_to_delete as $_f){
-					$_delete_path = $svn_path_subtype_local."/".$_f;
-					error_log("svn delete ".$_delete_path);
-					@svn_delete($_delete_path,TRUE);
-				}
-			}
 			
 
-			error_log("svn commiting ".$svn_path_subtype_local);
+			
+			error_log("svn status ".$svn_path_subtype_local);
+			$this->view->status = @svn_status($svn_path_subtype_local);
+			if(is_array($this->view->status)){
+				$_status_size       = count($this->view->status);
+				error_log("svn status found ".$_status_size." items.");
+				//foreach($this->view->status as $_status_item){
+										
 
-			//MT: error suppression from this error which may be due to a bug in the API
-			//https://bugs.php.net/bug.php?id=60583
-			/**
+				//}				
+		
+				if($_status_size>0){
+
+					error_log("svn commiting added and modified files for ".$svn_path_subtype_local);
+
+					//MT: error suppression from this error which may be due to a bug in the API
+					//https://bugs.php.net/bug.php?id=60583
+					/**
 			[Thu May 24 17:06:20 2012] [error] [client 127.0.0.1] PHP Warning:  svn_commit(): svn error(s) occured\n200031 (Attempted to write to readonly SQLite db) Commit failed (details follow):\n200031 (Attempted to write to readonly SQLite db) attempt to write a readonly database\n200031 (Attempted to write to readonly SQLite db) attempt to write a readonly database\n in /var/www/bfw-svnrelay/application/controllers/SvnController.php on line 89
 			NOTE file is added correctly but generates error on commit, but then shows up in repository
-			**/
+					**/
 
-			$svn_subtype_committed  = @svn_commit("commiting updated subtype ".$subtype,array($svn_path_subtype_local));
-			//$this->view->committed = $svn_subtype_committed;
+					$svn_subtype_committed  = @svn_commit("commiting updated subtype ".$subtype,array($svn_path_subtype_local));
+					$_commited		= true;
+					//$this->view->committed = $svn_subtype_committed;
 
-			//This generates an 'E' status on the command line, but seems to make things work
-			$svn_subtype_updated    = @svn_update($svn_path_subtype_local);
-			//return $svn_subtype_committed[0];
+					
+
+
+				}else{
+					error_log("svn not commiting ".$subtype." because no changes to files were found.");
+				}
+			}else{
+				error_log("svn found null status for ".$subtype);
+			}
 		}
 	}
-	return $svn_subtype_updated;
+	if($_commited){
+			//This generates an 'E' status on the command line, but seems to make things work
+			$svn_subtype_new_version    = @svn_update($svn_path_subtype_local);
+			$svn_subtype_updated        = $svn_subtype_new_version > $svn_subtype_current_version ? "1" : "0";
+			error_log("svn repository for ".$subtype." after commit now at version ".$svn_subtype_new_version);
+			//return $svn_subtype_committed[0];
+					
+			$this->view->statusafter = @svn_status($svn_path_subtype_local);
+					if(is_array($this->view->statusafter)){
+						if(count($this->view->statusafter)>0){
+							$svn_update_error = 1;//count($this->view->statusafter);
+							error_log("ERROR: status for ".$subtype." unresolved after update:");
+							error_log(json_encode($this->view->statusafter));
+						}
+					}
+	}
+	return array($svn_subtype_updated, $svn_subtype_current_version, $svn_subtype_new_version,$svn_update_error);
    }
    public function createRemoteRepository($subtype,$fromextracted=true){
 	$svn_subtype_committed  = null;
@@ -620,7 +683,12 @@ class SvnController extends Zend_Controller_Action
 		if(!$this->view->remoteexists){
 			$this->view->remotecreated = $this->createRemoteRepository($subtype);	
 		}else{
-			$this->view->localupdated  = $this->updateLocalWorkingCopy($subtype);
+			 
+			$_update_result= $this->updateLocalWorkingCopy($subtype);
+			$this->view->localupdated  = $_update_result[0];
+			$this->view->oldversion    = $_update_result[1];
+			$this->view->newversion    = $_update_result[2];
+			
 		}
 		
 	}catch(Exception $e){
@@ -644,8 +712,10 @@ class SvnController extends Zend_Controller_Action
 	$retarray['filename']         = $this->view->filename;
 	
 	$retarray['extracted']        = $this->view->extracted;
-	$retarray['remotecreated']    = $this->view->remotecreated;
+	$retarray['remotecreated']    = $this->view->remotecreated ? $this->view->remotecreated : "0";
 	$retarray['localupdated']     = $this->view->localupdated;
+	$retarray['oldversion']       = $this->view->oldversion;
+	$retarray['newversion']       = $this->view->newversion;
 	$retarray['copied']           = $this->view->copied;
 	$retarray['diff']	      = $this->view->diff;
 	$retarray['committed']	      = $this->view->committed;
