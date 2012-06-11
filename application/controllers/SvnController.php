@@ -9,6 +9,7 @@ class SvnController extends Zend_Controller_Action
     {
         /* Initialize action controller here */
     }
+   
   
    public function getRemoteBasePath($subtype=null){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
@@ -31,6 +32,15 @@ class SvnController extends Zend_Controller_Action
 		$_path = $_path .= "/".$subtype;
 	}
 	return $_path;
+   }
+   public function getUpdaterUrl($subtype=null){
+	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
+	$options        = $bootstrap->getOptions();
+	if(!array_key_exists('svnupdater_url',$options['svnrelay'])){
+		return null;
+	}
+	$svnupdater_url     = $options['svnrelay']['svnupdater_url'];
+	return $svnupdater_url;
    }
    public function getDigfirUrl(){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
@@ -335,6 +345,7 @@ class SvnController extends Zend_Controller_Action
 	$this->getHelper('layout')->setLayout('ajax');
 	$this->view->svn_path_base_remote  = $this->getRemoteBasePath();//$svn_path.$svn_repository;
 	$this->view->svn_path_base_local   = $this->getLocalBasePath();//$svn_local.$svn_repository;
+	$this->view->svnupdater_url	   = $this->getUpdaterUrl();
 	
 	if($this->hasSvnLibraries()){
 		$this->message       = "OK";
@@ -736,9 +747,20 @@ class SvnController extends Zend_Controller_Action
 
 	$this->view->msg =	json_encode($retarray);
 
+	if($this->view->remotecreated || $this->view->localupdated){
+		$retarray['remoteupdated'] = $this->promptRemoteUpdate();
+	}
+
 	return 1;
 
 
+    }
+    function promptRemoteUpdate(){
+	$svnupdater_url = $this->getUpdaterUrl();
+	if($svnupdater_url){
+
+	}
+	return 0;
     }
 }
 ?>
