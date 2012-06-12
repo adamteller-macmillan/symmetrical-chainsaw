@@ -227,7 +227,7 @@ class SvnController extends Zend_Controller_Action
 		}else if(!file_exists($svn_path_subtype_local)){
 			$svn_subtype_mkdir     = svn_mkdir($svn_path_subtype_local);
 		}
-		$svn_subtype_committed = svn_commit("created subtype ".$subtype,array($svn_path_subtype_local));
+		$svn_subtype_committed = @svn_commit("created subtype ".$subtype,array($svn_path_subtype_local));
 	}
 	return $svn_subtype_committed[0];
    }
