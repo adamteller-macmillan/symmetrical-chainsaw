@@ -42,6 +42,15 @@ class SvnController extends Zend_Controller_Action
 	$digfirfiles_url     =   $options['svnrelay']['digfirfiles_url'];
 	return $digfirfiles_url;
    }
+   public function getDigfirfilesPublicUrl($subtype){
+	$_base_url = $this->getDigfirfilesUrl();
+	$_public_url = $_base_url."files/";
+	if($subtype){
+		$_public_url = $_public_url . $subtype."/";
+	}
+	return $_public_url;
+	
+   }
    public function getDigfirfilesUpdateUrl($subtype=null){
 	$digfirfiles_url = $this->getDigfirfilesUrl();
 	if($digfirfiles_url ==null) return null;
@@ -756,13 +765,16 @@ class SvnController extends Zend_Controller_Action
 	$retarray['statusafter']      = $this->view->statusafter;
 
 	
+	
 
 	if($this->view->remotecreated || $this->view->localupdated){
 		$remoteupdated = $this->promptRemoteUpdate($subtype);	
 		if($remoteupdated){
-			$retarray['remoteupdated'] = json_decode($remoteupdated);
+			$retarray['remoteupdated']   = json_decode($remoteupdated);
+			
 		}
 	}
+	$retarray['digfirfiles_url'] = $this->getDigfirfilesPublicUrl($subtype);
 	$this->view->msg =	json_encode($retarray);
 	return 1;
 
