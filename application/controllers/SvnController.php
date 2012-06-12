@@ -33,14 +33,24 @@ class SvnController extends Zend_Controller_Action
 	}
 	return $_path;
    }
-   public function getUpdaterUrl($subtype=null){
+   public function getDigfirfilesUrl(){
 	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	$options        = $bootstrap->getOptions();
-	if(!array_key_exists('svnupdater_url',$options['svnrelay'])){
+	if(!array_key_exists('digfirfiles_url',$options['svnrelay'])){
 		return null;
 	}
-	$svnupdater_url     = $options['svnrelay']['svnupdater_url'];
-	return $svnupdater_url;
+	$digfirfiles_url     =   $options['svnrelay']['digfirfiles_url'];
+	return $digfirfiles_url;
+   }
+   public function getDigfirfilesUpdateUrl($subtype=null){
+	$digfirfiles_url = $this->getDigfirfilesUrl();
+	if($digfirfiles_url ==null) return null;
+	$digfirfiles_update_url     = $digfirfiles_url."svn/update";
+
+	if($subtype){
+		$digfirfiles_update_url    = $digfirfiles_update_url     . "/subtype/".$subtype;
+	}
+	return $digfirfiles_update_url;
    }
    public function getDigfirUrl(){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
@@ -748,17 +758,31 @@ class SvnController extends Zend_Controller_Action
 	$this->view->msg =	json_encode($retarray);
 
 	if($this->view->remotecreated || $this->view->localupdated){
-		$retarray['remoteupdated'] = $this->promptRemoteUpdate();
+		$retarray['remoteupdated'] = $this->promptRemoteUpdate($subtype);
 	}
 
 	return 1;
 
 
     }
-    function promptRemoteUpdate(){
-	$svnupdater_url = $this->getUpdaterUrl();
-	if($svnupdater_url){
+    function promptRemoteUpdate($subtype){
+	$digfirfiles_update_url = $this->getDigfirfilesUpdateUrl($subtype);
 
+	if($digfirfiles_update_url){
+			error_log("calling digfirfiles update with url ".$digfirfiles_update_url);
+			$client   = new Zend_Http_Client($digfirfiles_update_url, array(
+    			'maxredirects' => 5,
+			'keepalive' => true,
+    			'timeout'      => 30));
+			
+			$response = $client->request('POST');
+			$body     = $response->getBody();
+
+			error_log("digfirfiles update returned body ".$body);
+
+			
+	}else{
+			error_log("not calling digfirfiles update because url was null");
 	}
 	return 0;
     }
