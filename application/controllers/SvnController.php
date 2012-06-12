@@ -755,12 +755,15 @@ class SvnController extends Zend_Controller_Action
 	$retarray['filesdeleted']     = $this->view->filesdeleted;
 	$retarray['statusafter']      = $this->view->statusafter;
 
-	$this->view->msg =	json_encode($retarray);
+	
 
 	if($this->view->remotecreated || $this->view->localupdated){
-		$retarray['remoteupdated'] = $this->promptRemoteUpdate($subtype);
+		$remoteupdated = $this->promptRemoteUpdate($subtype);	
+		if($remoteupdated){
+			$retarray['remoteupdated'] = json_decode($remoteupdated);
+		}
 	}
-
+	$this->view->msg =	json_encode($retarray);
 	return 1;
 
 
@@ -777,14 +780,16 @@ class SvnController extends Zend_Controller_Action
 			
 			$response = $client->request('POST');
 			$body     = $response->getBody();
-
 			error_log("digfirfiles update returned body ".$body);
+			return $body;
+
+			
 
 			
 	}else{
 			error_log("not calling digfirfiles update because url was null");
 	}
-	return 0;
+	return null;
     }
 }
 ?>
