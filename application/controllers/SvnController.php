@@ -808,5 +808,28 @@ class SvnController extends Zend_Controller_Action
 	}
 	return null;
     }
+    function digfirfilesAction(){
+	$_subtype        = $this->getRequest()->getParam('subtype');
+	$_remoteaction   = $this->getRequest()->getParam('remoteaction');
+
+	$_url    =  $this->getDigfirfilesUrl();
+	$_url    =  $_url.'svn';
+	if(!$_remoteaction){
+		$_remoteaction = "ping";
+	}
+	$_url  = $_url.'/'.$_remoteaction;
+	
+	if($_subtype){
+		$_url = $_url.'/subtype/'.$_subtype;
+	}
+	//error_log("digfirfiles url: ".$_url);
+
+	$client   = new Zend_Http_Client($_url, array(
+    			'maxredirects' => 5,
+    			'timeout'      => 30));
+	$response = $client->request('GET');
+        $this->getHelper('layout')->setLayout('ajax');
+	$this->view->jsonstring = $response->getBody();
+    }
 }
 ?>
