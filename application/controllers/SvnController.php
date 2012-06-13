@@ -9,7 +9,11 @@ class SvnController extends Zend_Controller_Action
     {
         /* Initialize action controller here */
     }
-   
+   public function updateRemoteFiles(){
+	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
+	$options        = $bootstrap->getOptions();
+	return $options['svnrelay']['update_remote_files'];
+   }
   
    public function getRemoteBasePath($subtype=null){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
@@ -766,15 +770,16 @@ class SvnController extends Zend_Controller_Action
 
 	
 	
-
-	if($this->view->remotecreated || $this->view->localupdated){
-		$remoteupdated = $this->promptRemoteUpdate($subtype);	
-		if($remoteupdated){
-			$retarray['remoteupdated']   = json_decode($remoteupdated);
+	if($this->updateRemoteFiles()){
+		if($this->view->remotecreated || $this->view->localupdated){
+			$remoteupdated = $this->promptRemoteUpdate($subtype);	
+			if($remoteupdated){
+				$retarray['remoteupdated']   = json_decode($remoteupdated);
 			
+			}
 		}
+		$retarray['digfirfiles_url'] = $this->getDigfirfilesPublicUrl($subtype);
 	}
-	$retarray['digfirfiles_url'] = $this->getDigfirfilesPublicUrl($subtype);
 	$this->view->msg =	json_encode($retarray);
 	return 1;
 
