@@ -572,7 +572,7 @@ class SvnController extends Zend_Controller_Action
 	return $_array;
    }
 
-   function delete_directory($dirname) {
+   function delete_directory($dirname, $result = true) {
 			if (is_dir($dirname)) {
 				$dir_handle = opendir($dirname);
 			}
@@ -582,15 +582,15 @@ class SvnController extends Zend_Controller_Action
 			while($file = readdir($dir_handle)) {
 					if ($file != "." && $file != "..") {
 						if (!is_dir($dirname."/".$file)) {
-							unlink($dirname."/".$file);
+							$result = unlink($dirname."/".$file) && $result;
 						} else {
-							$this->delete_directory($dirname.'/'.$file);    
+							$result = $this->delete_directory($dirname.'/'.$file, $result) && $result;    
 						}
 					}
 			}
 			closedir($dir_handle);
-			rmdir($dirname);
-			return true;
+			$result = rmdir($dirname) && $result;
+			return $result;
    }
 
 
@@ -830,6 +830,69 @@ class SvnController extends Zend_Controller_Action
 	$response = $client->request('GET');
         $this->getHelper('layout')->setLayout('ajax');
 	$this->view->jsonstring = $response->getBody();
+    }
+    function checkoutAction(){
+	$this->getHelper('layout')->setLayout('ajax');
+	$local_path 		   = "/home/matt/svn/digfir.test.0";
+	$local_path_container      = $local_path."/container";
+	error_log("OK: checkoutAction reinitializing working copy at ".$local_path);
+
+	$retarray = array();
+	$retarray['message'] = 'OK';
+
+	if(file_exists($local_path)){
+		//local path exists
+		error_log("OK: checkoutAction local path ".$local_path." exists.");
+		if(is_writable($local_path)){
+			error_log("OK: checkoutAction local path ".$local_path." is writable.");
+			$created_local_container = 0;
+			if(file_exists($local_path_container)){
+				//container exists, so delete it
+				error_log("OK: checkoutAction local container path ".$local_path_container." exists.");
+				if(is_writable($local_path_container)){
+					error_log("OK: checkoutAction local container path ".$local_path_container." is writable.");
+					$deleted = $this->delete_directory($local_path_container);
+					error_log("OK: checkoutAction deleted directory ".$local_path_container. ": ".$deleted);
+					if(mkdir($local_path_container)){
+						$created_local_container = 1;
+						error_log("OK: checkoutAction creating directory ".$local_path_container);
+						
+					}else{
+						error_log("ERROR: checkoutAction unable to create ".$local_path_container." is not writable.");
+					}
+					
+				}else{
+					error_log("ERROR: checkoutAction local container path ".$local_path_container." is not writable.");
+					//error: container is not writable
+				}
+			}else{
+				error_log("OK: checkoutAction local container path ".$local_path_container." does not exist.");
+				if(mkdir($local_path_container)){
+						$created_local_container = 0;
+						error_log("OK: checkoutAction creating directory ".$local_path_container);
+				}else{
+						error_log("ERROR: checkoutAction unable to create ".$local_path_container." is not writable.");
+				}
+			}
+			if($created_local_container){
+				$repository_path = $this->getRemoteBasePath();
+				$checked_out = svn_checkout($repository_path,$local_path_container);
+				if($checked_out){
+					error_log("OK: checkoutAction checked out repository ".$repository_path." to ".$local_path_container);
+				}else{
+					error_log("ERROR: checkoutAction could not check out repository ".$repository_path." to ".$local_path_container);
+				}
+
+			}
+		}else{
+			//error: local_path not writable
+			error_log("ERROR: checkoutAction local path ".$local_path." is not writable.");
+		}
+	}else{
+		//error: local path does not exist
+		error_log("ERROR: checkoutAction local path ".$local_path." does not exist.");
+	}
+	$this->view->jsonstring = json_encode($retarray);
     }
 }
 ?>
