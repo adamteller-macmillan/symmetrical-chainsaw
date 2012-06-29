@@ -66,9 +66,13 @@ class SvnController extends Zend_Controller_Action
 	return $digfirfiles_update_url;
    }
    public function getDigfirUrl(){
-	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
-	$options        = $bootstrap->getOptions();
-	return $options['svnrelay']['digfir_url'];
+	//$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
+	//$options        = $bootstrap->getOptions();
+	//return $options['svnrelay']['digfir_url'];
+	$this->view->digfirhost = $this->getRequest()->getParam('digfirhost');
+	$digfir_url = "http://".$this->view->digfirhost."/";
+	error_log("using digfir url ".$digfir_url);
+	return $digfir_url;
    } 
    public function getDownloadDir($subtype=null){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
@@ -604,7 +608,10 @@ class SvnController extends Zend_Controller_Action
     public function initiatecommitAction(){
 	$this->getHelper('layout')->setLayout('ajax');
 	$this->view->subtype = $this->getRequest()->getParam('subtype');
+	
+
 	error_log("subtype=".$this->view->subtype);
+	
 	$this->view->testmessage = "OK";
 	if(!$this->view->subtype){
 		$this->view->message = "ERROR: subtype not defined";
@@ -615,14 +622,17 @@ class SvnController extends Zend_Controller_Action
     public function downloadzipAction(){
 	
 	error_log("======");
-	$subtype = $this->getRequest()->getParam('subtype');
-	$digfir  = $this->getRequest()->getParam('digfir');
-	$this->view->digfir = $digfir;
+	$subtype    = $this->getRequest()->getParam('subtype');
+	$digfir     = $this->getRequest()->getParam('digfir');
+	
+	
+	$this->view->digfir 	= $digfir;
 	if($digfir){
 		error_log("processing download request from digfir...");
 
 	}
 	if($subtype){
+		
 		$this->view->success = $this->doDownloadZip($subtype);
 	}else{
 		$this->view->message = "The subtype must be specified.";
@@ -680,6 +690,9 @@ class SvnController extends Zend_Controller_Action
 	}
 
 	$digfir_url	= $this->getDigfirUrl();
+
+
+
 	$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
 	//$url            = $digfir_url.'manuscript/test/';
 	$client->setUri($url);
