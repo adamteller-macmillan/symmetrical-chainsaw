@@ -65,6 +65,7 @@ class SvnController extends Zend_Controller_Action
 	}
 	return $digfirfiles_update_url;
    }
+   //MT: fix here allows the dev, staging, and production versions of digfir to work simultaneously with the same svnrelay app
    public function getDigfirUrl(){
 	//$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	//$options        = $bootstrap->getOptions();
@@ -77,6 +78,12 @@ class SvnController extends Zend_Controller_Action
 	error_log("using digfir url ".$digfir_url);
 	return $digfir_url;
    } 
+   public function getKey(){
+	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
+	$options        = $bootstrap->getOptions();
+	$_key      = $options['svnrelay']['key'];
+	return $_key;
+   }
    public function getDownloadDir($subtype=null){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	$options        = $bootstrap->getOptions();
@@ -86,6 +93,7 @@ class SvnController extends Zend_Controller_Action
 	}
 	return $_dir;
    }
+ 
    public function updateLocalWorkingCopy($subtype){
 	$svn_path_subtype_local 	= $this->getLocalBasePath($subtype);
 	$svn_subtype_current_version    = svn_update($svn_path_subtype_local);
@@ -627,18 +635,42 @@ class SvnController extends Zend_Controller_Action
 	error_log("======");
 	$subtype    = $this->getRequest()->getParam('subtype');
 	$digfir     = $this->getRequest()->getParam('digfir');
-	
-	
-	$this->view->digfir 	= $digfir;
-	if($digfir){
-		error_log("processing download request from digfir...");
+	$keysent    = $this->getRequest()->getParam('svnrelaykey');
 
+	$_key       = $this->getKey();
+	$_do_download = false;
+	if(!empty($_key)){
+		error_log("local key is defined. validation from digfir required.");
+		if($_key===$keysent){
+			error_log("local key matches key passed from digfir.");
+			$this->view->digfir 	= $digfir;
+			if($digfir){
+				error_log("processing download request from digfir...");
+			}
+			if($subtype){
+				$_do_download = true;
+				
+			}else{
+				$this->view->message = "ERROR: The subtype must be specified.";
+				
+			}
+		}else{
+			error_log("the svnrelaykey value sent from digfir (".$keysent.") was invalid.");
+			$this->view->message = "ERROR: the svnrelay key sent from digfir was invalid.";
+		}
+	}else{
+		error_log("local key is not defined. validation of digfir app not performed.");
+		$_do_download = true;
 	}
-	if($subtype){
-		
+	if($_do_download){
 		$this->view->success = $this->doDownloadZip($subtype);
 	}else{
-		$this->view->message = "The subtype must be specified.";
+
+		$retarray	     = array();
+		$retarray['message'] = $this->view->message;
+		$this->view->msg     = json_encode($retarray);
+		$this->getHelper('layout')->setLayout('ajax');
+		//error_log($this->view->msg);
 	}
     }
     //MT: performs login to DIGFIR application
@@ -810,7 +842,10 @@ class SvnController extends Zend_Controller_Action
     			'maxredirects' => 5,
 			'keepalive' => true,
     			'timeout'      => 30));
-			
+			$_key = $this->getKey();
+			if(!empty($_key)){
+				$client->setParameterPost('svnrelaykey',$_key);
+			}
 			$response = $client->request('POST');
 			$body     = $response->getBody();
 			error_log("digfirfiles update returned body ".$body);
