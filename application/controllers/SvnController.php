@@ -69,8 +69,11 @@ class SvnController extends Zend_Controller_Action
 	//$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	//$options        = $bootstrap->getOptions();
 	//return $options['svnrelay']['digfir_url'];
-	$this->view->digfirhost = $this->getRequest()->getParam('digfirhost');
-	$digfir_url = "http://".$this->view->digfirhost."/";
+	$this->view->digfirhost     = $this->getRequest()->getParam('digfirhost');
+	$this->view->digfirusehttps = $this->getRequest()->getParam('digfirusehttps');
+
+	$digfir_protocol = $this->view->digfirusehttps==="1" ? "https" : "http"; 
+	$digfir_url      = $digfir_protocol."://".$this->view->digfirhost."/";
 	error_log("using digfir url ".$digfir_url);
 	return $digfir_url;
    } 
