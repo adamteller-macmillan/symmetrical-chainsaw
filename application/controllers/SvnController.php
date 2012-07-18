@@ -710,21 +710,22 @@ class SvnController extends Zend_Controller_Action
     public function doDownloadZip($subtype){
 	
 	$zip_url	= $this->getRequest()->getParam('zipurl');
-	$do_login	= $this->getRequest()->getParam('dologin');
+	$bypass_login	= $this->getRequest()->getParam('bypasslogin');
 
 	$client		= null;	
-	if($do_login){
-		$client   = $this->doRemoteLogin();
-		$digfir_url	= $this->getDigfirUrl();
-		$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
-		$client->setUri($url);
-	}else{
+
+	if($bypass_login){
 		error_log("bypassing login to digfir app");
 		$url = $zip_url;
 		$client   = new Zend_Http_Client($url,array(
     			'maxredirects' => 5,
 			'keepalive' => true,
     			'timeout'      => 30));
+	}else{
+		$client   = $this->doRemoteLogin();
+		$digfir_url	= $this->getDigfirUrl();
+		$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
+		$client->setUri($url);
 		
 	}
 	$retarray = array();
