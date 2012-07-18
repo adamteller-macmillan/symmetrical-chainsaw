@@ -78,6 +78,10 @@ class SvnController extends Zend_Controller_Action
 	error_log("using digfir url ".$digfir_url);
 	return $digfir_url;
    } 
+
+
+
+
    public function getKey(){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	$options        = $bootstrap->getOptions();
@@ -705,7 +709,24 @@ class SvnController extends Zend_Controller_Action
 
     public function doDownloadZip($subtype){
 	
-	$client   = $this->doRemoteLogin();
+	$zip_url	= $this->getRequest()->getParam('zipurl');
+	$do_login	= $this->getRequest()->getParam('dologin');
+
+	$client		= null;	
+	if($do_login){
+		$client   = $this->doRemoteLogin();
+		$digfir_url	= $this->getDigfirUrl();
+		$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
+		$client->setUri($url);
+	}else{
+		error_log("bypassing login to digfir app");
+		$url = $zip_url;
+		$client   = new Zend_Http_Client($url,array(
+    			'maxredirects' => 5,
+			'keepalive' => true,
+    			'timeout'      => 30));
+		
+	}
 	$retarray = array();
 
 	$download_dir = $this->getDownloadDir();
@@ -724,13 +745,8 @@ class SvnController extends Zend_Controller_Action
 			
 	}
 
-	$digfir_url	= $this->getDigfirUrl();
+	error_log("commencing download of zip from ".$url);
 
-
-
-	$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
-	//$url            = $digfir_url.'manuscript/test/';
-	$client->setUri($url);
 	$client->setStream();
 	$response = $client->request('GET');
 	$body     = $response->getBody();
