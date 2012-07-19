@@ -97,6 +97,12 @@ class SvnController extends Zend_Controller_Action
 	}
 	return $_dir;
    }
+   public function getLockDir(){
+	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
+	$options        = $bootstrap->getOptions();
+	$_dir           = $options['svnrelay']['lock_dir'];
+	return $_dir;
+   }
  
    public function updateLocalWorkingCopy($subtype){
 	$svn_path_subtype_local 	= $this->getLocalBasePath($subtype);
@@ -961,6 +967,58 @@ class SvnController extends Zend_Controller_Action
 		error_log("ERROR: checkoutAction local path ".$local_path." does not exist.");
 	}
 	$this->view->jsonstring = json_encode($retarray);
+    }
+
+    function getLockFilePath($subtype){
+	$_dir  = $this->getLockDir();
+	$_path = $_dir."/".$subtype.".lock";
+	return $_path;
+    }
+
+    function writeLockFile($subtype,$user){
+	return file_put_contents($this->getLockFilePath($subtype),$user);
+    }
+    function deleteLockFile($_subtype){
+	$_path = $this->getLockFilePath($_subtype);
+	if(file_exists($_path)){
+		return unlink($_path);
+	}
+	return null;
+    }
+
+
+    function getLockFileContents($_subtype){
+	$_path = $this->getLockFilePath($_subtype);
+	if(file_exists($_path)){
+		return array($_subtype, filemtime($_path), file_get_contents($_path));
+	}
+	return null;
+    }
+
+    function getListOfLockFiles(){
+	$_dir   = $this->getLockDir();
+	$_files = scandir($_dir);
+	$_lock_files = array();
+	foreach($_files as $_file){
+		$_path_info = pathinfo($_file);
+		if($_path_info['extension']=="lock"){
+			$_subtype      = $_path_info['filename'];
+			$_lock_files[] = $this->getLockFileContents($_subtype);
+		}
+	}	
+	return $_lock_files;
+	
+    }
+
+    
+
+    function lockAction(){
+	$this->view->lock_dir          = $this->getLockDir();
+	$this->view->lock_dir_exists   = file_exists($this->view->lock_dir);
+	$this->view->lock_dir_writable = is_writable($this->view->lock_dir);
+
+	$this->view->lock_files	       = $this->getListOfLockFiles();
+
     }
 }
 ?>
