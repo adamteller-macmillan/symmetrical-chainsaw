@@ -983,14 +983,14 @@ class SvnController extends Zend_Controller_Action
 	if(file_exists($_path)){
 		return unlink($_path);
 	}
-	return null;
+	return FALSE;
     }
 
 
     function getLockFileContents($_subtype){
 	$_path = $this->getLockFilePath($_subtype);
 	if(file_exists($_path)){
-		return array($_subtype, filemtime($_path), file_get_contents($_path));
+		return array($_subtype, $_path, filemtime($_path), file_get_contents($_path));
 	}
 	return null;
     }
@@ -1009,7 +1009,28 @@ class SvnController extends Zend_Controller_Action
 	return $_lock_files;
 	
     }
-
+    function removelockAction(){
+	$this->getHelper('layout')->setLayout('ajax');
+	$_subtype = $this->getRequest()->getParam('subtype');
+	if($_subtype){
+		$this->view->result = $this->deleteLockFile($_subtype);
+	}
+    }
+    function clearlocksAction(){
+	$this->getHelper('layout')->setLayout('ajax');
+	$_files  = $this->getListOfLockFiles();
+	$_result = array();
+	foreach($_files as $_file){
+		$_subtype = $_file[0];
+		$_result[$_subtype] = $this->deleteLockFile($_subtype);
+	}
+	$this->view->result = $_result;
+    }
+    function listlocksAction(){
+	$this->getHelper('layout')->setLayout('ajax');
+	$this->view->lock_files = $this->getListOfLockFiles();
+	
+    }
     
 
     function lockAction(){
