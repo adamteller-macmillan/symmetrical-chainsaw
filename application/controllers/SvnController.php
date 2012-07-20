@@ -103,6 +103,12 @@ class SvnController extends Zend_Controller_Action
 	$_dir           = $options['svnrelay']['lock_dir'];
 	return $_dir;
    }
+   public function getLockLevel(){
+	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
+	$options        = $bootstrap->getOptions();
+	$_level         = $options['svnrelay']['lock_level'];
+	return $_level;	
+   }
  
    public function updateLocalWorkingCopy($subtype){
 	$svn_path_subtype_local 	= $this->getLocalBasePath($subtype);
@@ -673,7 +679,47 @@ class SvnController extends Zend_Controller_Action
 		$_do_download = true;
 	}
 	if($_do_download){
-		$this->view->success = $this->doDownloadZip($subtype);
+		$_is_locked  = TRUE;
+		$_lock_level = $this->getLockLevel();
+		error_log("found lock level to be ".$_lock_level);
+		if($_lock_level=="all"){
+			//keep locked if any lock exists for any subtype
+			$_locks = $this->getListOfLockFiles();
+			if($_locks && count($_locks)>0){
+				$_lock = $_locks[0];
+				if($_lock){
+					$this->view->message = "WARNING: The subtype ".$_subtype." is currently locked due to a commit of subtype '".$_lock[0]."' by user '".$_lock[3]."' initiated on ".date("D M j G:i:s T Y",$_lock[2]).". Please wait and try again in a few minutes. If this persists please contact an administrator. (lock level=all)";
+				}else{
+					$_is_locked = FALSE;
+				}
+			}else{
+				$_is_locked = TRUE;
+			}
+		}else if($_lock_level=="subtype"){
+			$_lock	= $this->getLockFileContents($subtype);
+			if($_lock==NULL){
+				$_is_locked = FALSE;
+			}else{
+				$this->view->message = "WARNING: The subtype ".$subtype." is currently locked due to a commit by user '".$_lock[3]."' initiated on ".date("D M j G:i:s T Y",$_lock[2]).".  Please wait and try again in a few minutes. If this persists please contact an administrator. (lock level=subtype)";
+			}
+		}else{
+			$_is_locked = FALSE;
+		}
+		if(!$_is_locked){
+
+			if($_lock_level=="subtype" || $_lock_level=="all"){
+				$user = "digfir";
+				$this->writeLockFile($subtype,$user);
+			}
+			$this->view->success = $this->doDownloadZip($subtype);
+
+			$this->deleteLockFile($subtype);
+		}else{
+			$retarray	     = array();
+			$retarray['message'] = $this->view->message;
+			$this->view->msg     = json_encode($retarray);
+			$this->getHelper('layout')->setLayout('ajax');
+		}
 	}else{
 
 		$retarray	     = array();
