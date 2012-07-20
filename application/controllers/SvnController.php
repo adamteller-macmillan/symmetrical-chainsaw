@@ -713,7 +713,7 @@ class SvnController extends Zend_Controller_Action
 			}
 			$this->view->success = $this->doDownloadZip($subtype);
 
-			$this->deleteLockFile($subtype);
+			//$this->deleteLockFile($subtype);
 		}else{
 			$retarray	     = array();
 			$retarray['message'] = $this->view->message;
@@ -1036,7 +1036,7 @@ class SvnController extends Zend_Controller_Action
     function getLockFileContents($_subtype){
 	$_path = $this->getLockFilePath($_subtype);
 	if(file_exists($_path)){
-		return array($_subtype, $_path, filemtime($_path), file_get_contents($_path));
+		return array($_subtype, $_path, filemtime($_path), file_get_contents($_path),date("D M j G:i:s T Y",filemtime($_path)));
 	}
 	return null;
     }
@@ -1057,10 +1057,17 @@ class SvnController extends Zend_Controller_Action
     }
     function removelockAction(){
 	$this->getHelper('layout')->setLayout('ajax');
+	$retarray = array();
+	$retarray['result'] = '0';
 	$_subtype = $this->getRequest()->getParam('subtype');
+	
 	if($_subtype){
 		$this->view->result = $this->deleteLockFile($_subtype);
+		if($this->view->result){
+			$retarray['result'] = '1';
+		}
 	}
+	$this->view->retarray = $retarray;
     }
     function clearlocksAction(){
 	$this->getHelper('layout')->setLayout('ajax');
