@@ -713,7 +713,7 @@ class SvnController extends Zend_Controller_Action
 			}
 			$this->view->success = $this->doDownloadZip($subtype);
 
-			//$this->deleteLockFile($subtype);
+			$this->deleteLockFile($subtype);
 		}else{
 			$retarray	     = array();
 			$retarray['message'] = $this->view->message;
