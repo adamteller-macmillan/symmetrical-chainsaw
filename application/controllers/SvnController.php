@@ -47,8 +47,11 @@ class SvnController extends Zend_Controller_Action
 	return $digfirfiles_url;
    }
    public function getDigfirfilesPublicUrl($subtype){
-	$_base_url = $this->getDigfirfilesUrl();
-	$_public_url = $_base_url."files/";
+	//$_base_url = $this->getDigfirfilesUrl();
+	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
+	$options        = $bootstrap->getOptions();
+	$_public_url   = $options['svnrelay']['digfirfiles_public_url'];
+	//$_public_url = $_base_url."files/";
 	if($subtype){
 		$_public_url = $_public_url . $subtype."/";
 	}
@@ -906,16 +909,20 @@ class SvnController extends Zend_Controller_Action
 	$digfirfiles_update_url = $this->getDigfirfilesUpdateUrl($subtype);
 
 	if($digfirfiles_update_url){
-			error_log("calling digfirfiles update with url ".$digfirfiles_update_url);
+			error_log("promptRemoteUpdate calling digfirfiles update with url ".$digfirfiles_update_url);
 			$client   = new Zend_Http_Client($digfirfiles_update_url, array(
     			'maxredirects' => 5,
 			'keepalive' => true,
     			'timeout'      => 30));
+			//error_log("getting key");
 			$_key = $this->getKey();
 			if(!empty($_key)){
+				//error_log("setting key as ".$_key);
 				$client->setParameterPost('svnrelaykey',$_key);
 			}
+			//error_log("sending post request.");
 			$response = $client->request('POST');
+			
 			$body     = $response->getBody();
 			error_log("digfirfiles update returned body ".$body);
 			return $body;
