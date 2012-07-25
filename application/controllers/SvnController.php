@@ -400,9 +400,13 @@ class SvnController extends Zend_Controller_Action
 	
 	$this->do_repository = 1;
 	$this->getHelper('layout')->setLayout('ajax');
+
 	$this->view->svn_path_base_remote  = $this->getRemoteBasePath();//$svn_path.$svn_repository;
 	$this->view->svn_path_base_local   = $this->getLocalBasePath();//$svn_local.$svn_repository;
-	$this->view->svnupdater_url	   = $this->getUpdaterUrl();
+
+	$this->view->digfirfiles_url	   = $this->getDigfirfilesUrl();
+
+	$this->view->lock_files 	   = $this->getListOfLockFiles();
 	
 	if($this->hasSvnLibraries()){
 		$this->message       = "OK";
