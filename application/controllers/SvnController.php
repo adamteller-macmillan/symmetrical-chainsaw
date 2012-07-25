@@ -659,6 +659,7 @@ class SvnController extends Zend_Controller_Action
 	$subtype    = $this->getRequest()->getParam('subtype');
 	$digfir     = $this->getRequest()->getParam('digfir');
 	$keysent    = $this->getRequest()->getParam('svnrelaykey');
+	$_user      = $this->getRequest()->getParam('user');
 
 	$_key       = $this->getKey();
 	$_do_download = false;
@@ -715,12 +716,12 @@ class SvnController extends Zend_Controller_Action
 		if(!$_is_locked){
 
 			if($_lock_level=="subtype" || $_lock_level=="all"){
-				$user = "digfir";
+				$user = $_user;
 				$this->writeLockFile($subtype,$user);
 			}
 			$this->view->success = $this->doDownloadZip($subtype);
 
-			$this->deleteLockFile($subtype);
+			//$this->deleteLockFile($subtype);
 		}else{
 			$retarray	     = array();
 			$retarray['message'] = $this->view->message;
