@@ -653,11 +653,13 @@ class SvnController extends Zend_Controller_Action
 	if($subtype){
 		$svn_path_subtype_local 	= $this->getLocalBasePath($subtype);
 
+		
 		if(file_exists($svn_path_subtype_local)){
 			$retarray['local_path_exists']  = TRUE;
 			$svn_path_deleted		= $this->delete_directory($svn_path_subtype_local);	
 		}else{
 			$retarray['local_path_exists']  = FALSE;
+			$svn_path_deleted = FALSE;
 		}
 		if($svn_path_deleted==NULL){
 				$svn_path_deleted = FALSE;
