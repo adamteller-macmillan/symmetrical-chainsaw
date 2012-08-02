@@ -654,9 +654,10 @@ class SvnController extends Zend_Controller_Action
 		$svn_path_subtype_local 	= $this->getLocalBasePath($subtype);
 
 		if(file_exists($svn_path_subtype_local)){
-			$svn_path_deleted		= $this->delete_directory($svn_path_subtype_local);
-			
-			
+			$retarray['local_path_exists']  = TRUE;
+			$svn_path_deleted		= $this->delete_directory($svn_path_subtype_local);	
+		}else{
+			$retarray['local_path_exists']  = FALSE;
 		}
 		if($svn_path_deleted==NULL){
 				$svn_path_deleted = FALSE;
@@ -681,8 +682,14 @@ class SvnController extends Zend_Controller_Action
 			$body 	  = $response->getBody();
 			$msg      = json_decode($body,true);
 			$retarray['remote_path_deleted'] = $msg['message']==="1";
+			$retarray['remote_path']         = $msg['subtype_dir'];
+			$retarray['remote_path_exists']  = $msg['subtype_dir_exists'];
+			$retarray['remote_message']      = $msg['message'];
 		}catch(Exception $e){
 			$retarray['remote_path_deleted'] = FALSE;
+			$retarray['remote_path']         = NULL;
+			$retarray['remote_path_exists']  = NULL;
+			$retarray['remote_message']      = $e->getMessage();
 		}
 		
 	}
