@@ -446,8 +446,8 @@ class SvnController extends Zend_Controller_Action
 	if($svn_delete){
 		$svn_committed        	= svn_commit("deleting subtype ".$subtype,array($svn_path_base_local));
 
-		
-		$retarray['svn_deleted']		= $svn_committed[0];
+		$svn_deleted				= $svn_committed[0];
+		$retarray['svn_deleted']		= $svn_deleted;
 		if($svn_deleted){
 			$this->deleteExistingDownloads($subtype); 
 			$retarray 			= array_merge($retarray,$this->doRemoteReinit($subtype));
