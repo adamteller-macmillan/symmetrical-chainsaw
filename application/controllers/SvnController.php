@@ -856,6 +856,8 @@ class SvnController extends Zend_Controller_Action
 	if(file_exists($download_file)){
 		unlink($download_file);
 		error_log("deleting existing zip file ".$download_file);
+	}else{
+		error_log("not deleting existing zip file ".$download_file." because it does not yet exist.");
 	}
 
 	$extract_dir = $download_dir."/".$subtype;
@@ -864,7 +866,10 @@ class SvnController extends Zend_Controller_Action
 		error_log("deleting extract directory ".$extract_dir);
 		$this->delete_directory($extract_dir);
 			
+	}else{
+		error_log("not deleting extract directory ".$extract_dir. "because it does not yet exist.");
 	}
+	return array($download_dir,$download_file,$extract_dir);
     }
 
     public function doDownloadZip($subtype){
@@ -890,8 +895,11 @@ class SvnController extends Zend_Controller_Action
 	}
 	$retarray = array();
 
-	$this->deleteExistingDownloads($subtype);
-
+	$downloads = $this->deleteExistingDownloads($subtype);
+	$download_dir 	= $downloads[0];
+	$download_file  = $downloads[1];
+	$extract_dir    = $downloads[2];
+ 
 	error_log("commencing download of zip from ".$url);
 
 	$client->setStream();
