@@ -431,18 +431,32 @@ class SvnController extends Zend_Controller_Action
    }
    public function deleteAction(){
 	$this->getHelper('layout')->setLayout('ajax');
-	$this->view->subtype 		   = $this->getRequest()->getParam('subtype');
-	$this->view->svn_path_base_local   = $this->getLocalBasePath($this->view->subtype);
-	$svn_delete	   		   = svn_delete($this->view->svn_path_base_local,TRUE);
+	
+	$retarray 			= array();
+	$svn_committed   		= 0;
+	$subtype		   	= $this->getRequest()->getParam('subtype');
+	$svn_path_base_local   		= $this->getLocalBasePath($subtype);
+
+	$retarray['svn_deleted'] 		= "0";
+	$retarray['message']			= "FAILED";
+	$retarray['subtype'] 			= $subtype;
+	$retarray['svn_path_base_local']	= $svn_path_base_local;
+
+	$svn_delete	   		= svn_delete($svn_path_base_local,TRUE);
 	if($svn_delete){
-		$this->view->svn_committed         = svn_commit("deleting subtype ".$this->view->subtype,array($this->view->svn_path_base_local));
-		$this->view->message = "svn deleted successful";
-		$this->view->deleted = $this->view->svn_committed[0];
-	}else{
-		$this->view->svn_committed         = 0;
-		$this->view->message = "svn not deleted";
-		$this->view->deleted = "0";
+		$svn_committed        	= svn_commit("deleting subtype ".$subtype,array($svn_path_base_local));
+
+		
+		$retarray['svn_deleted']		= $svn_committed[0];
+		if($svn_deleted){
+			$this->deleteExistingDownloads($subtype); 
+			$retarray 			= array_merge($retarray,$this->doRemoteReinit($subtype));
+			$retarray['message'] 	 	= "OK";
+		}
 	}
+	$this->view->msg = json_encode($retarray);
+	
+
    }
    public function listAction(){
 	$this->subtype = $this->getRequest()->getParam('subtype');
@@ -640,6 +654,34 @@ class SvnController extends Zend_Controller_Action
 	$this->view->subtype = $this->getRequest()->getParam('subtype');
         // action body
     }
+    public function doRemoteReinit($subtype){
+		error_log("performing remote reinit for subtype ".$subtype);
+		$retarray = array();
+		$_url    =  $this->getDigfirfilesUrl();
+		$_url    =  $_url.'svn/delete/subtype/'.$subtype;
+	
+		
+
+		$client   = new Zend_Http_Client($_url, array(
+    			'maxredirects' => 5,
+    			'timeout'      => 30));
+		$response = $client->request('POST');	
+		try{
+			$body 	  = $response->getBody();
+			$msg      = json_decode($body,true);
+			$retarray['remote_path_deleted'] = $msg['message']==="1";
+			$retarray['remote_path']         = $msg['subtype_dir'];
+			$retarray['remote_path_exists']  = $msg['subtype_dir_exists'];
+			$retarray['remote_message']      = $msg['message'];
+		}catch(Exception $e){
+			$retarray['remote_path_deleted'] = FALSE;
+			$retarray['remote_path']         = NULL;
+			$retarray['remote_path_exists']  = NULL;
+			$retarray['remote_message']      = $e->getMessage();
+		}
+		return $retarray();
+
+    }
 
     public function reinitAction(){
 	$this->getHelper('layout')->setLayout('ajax');
@@ -667,32 +709,9 @@ class SvnController extends Zend_Controller_Action
 		$retarray['local_path'] 	= $svn_path_subtype_local; 
 		$retarray['local_path_deleted'] = $svn_path_deleted;
 
-		
-
-		$_url    =  $this->getDigfirfilesUrl();
-		$_url    =  $_url.'svn/delete/subtype/'.$subtype;
-	
-		
-
-		$client   = new Zend_Http_Client($_url, array(
-    			'maxredirects' => 5,
-    			'timeout'      => 30));
-		$response = $client->request('POST');	
+		$retarray = array_merge($retarray,$this->doRemoteReinit($subtype));
 		
 		
-		try{
-			$body 	  = $response->getBody();
-			$msg      = json_decode($body,true);
-			$retarray['remote_path_deleted'] = $msg['message']==="1";
-			$retarray['remote_path']         = $msg['subtype_dir'];
-			$retarray['remote_path_exists']  = $msg['subtype_dir_exists'];
-			$retarray['remote_message']      = $msg['message'];
-		}catch(Exception $e){
-			$retarray['remote_path_deleted'] = FALSE;
-			$retarray['remote_path']         = NULL;
-			$retarray['remote_path_exists']  = NULL;
-			$retarray['remote_message']      = $e->getMessage();
-		}
 		
 	}
 
@@ -829,6 +848,24 @@ class SvnController extends Zend_Controller_Action
 	error_log("result: ".$this->view->message);
 	return $client;
     } 
+    public function deleteExistingDownloads($subtype){
+
+	$download_dir = $this->getDownloadDir();
+	$download_file = $download_dir."/".$subtype.".zip";
+
+	if(file_exists($download_file)){
+		unlink($download_file);
+		error_log("deleting existing zip file ".$download_file);
+	}
+
+	$extract_dir = $download_dir."/".$subtype;
+
+	if(file_exists($extract_dir)){
+		error_log("deleting extract directory ".$extract_dir);
+		$this->delete_directory($extract_dir);
+			
+	}
+    }
 
     public function doDownloadZip($subtype){
 	
@@ -853,21 +890,7 @@ class SvnController extends Zend_Controller_Action
 	}
 	$retarray = array();
 
-	$download_dir = $this->getDownloadDir();
-	$download_file = $download_dir."/".$subtype.".zip";
-
-	if(file_exists($download_file)){
-		unlink($download_file);
-		error_log("deleting previous zip file ".$download_file);
-	}
-
-	$extract_dir = $download_dir."/".$subtype;
-
-	if(file_exists($extract_dir)){
-		error_log("deleting directory ".$extract_dir);
-		$this->delete_directory($extract_dir);
-			
-	}
+	$this->deleteExistingDownloads($subtype);
 
 	error_log("commencing download of zip from ".$url);
 
