@@ -2,6 +2,16 @@
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	$options        = $bootstrap->getOptions();
 	$dojo_url       = $options['svnrelay']['dojo_url'];
+
+	$_environment       = '';
+	$_environment_color = '#000000';
+	if(APPLICATION_ENV !== 'production') {
+    	$_environment = APPLICATION_ENV;
+    	$_environment_title = "(".$_environment.")";
+    	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
+    	$options = $bootstrap->getOptions();
+    	$_environment_color = $options['svnrelay']['color'];
+	}
 ?>
 <!DOCTYPE html>
 <!--[if lt IE 7 ]> <html lang="en" class="no-js ie6"> <![endif]-->
@@ -10,14 +20,16 @@
 <!--[if IE 9 ]>    <html lang="en" class="no-js ie9"> <![endif]-->
 <!--[if (gt IE 9)|!(IE)]><!--> <html lang="en" class="no-js"> <!--<![endif]-->
 <head>
-    <title>SVNRelay</title>
+    <title>SVNRelay <?php echo $_environment_title; ?></title>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script type="text/javascript" src="<?php echo $dojo_url;?>"></script>
 </head>
 <body>
-<h2 style="border-bottom: 1px dashed #ccc; color: #ccc; font-size: 14pt;">SVNRelay</h2>
+<h2 style="border-bottom: 1px dashed #ccc; color: #ccc; font-size: 14pt;">SVNRelay
+<span style="font-size: 12pt; padding: 0.6em; color: white; background-color: <?php echo $_environment_color;?>;">
+                <?php echo $_environment; ?></span></h2>
 <div id="main">
 <?php echo $this->layout()->content ?>
 </div>
