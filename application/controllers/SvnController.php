@@ -113,11 +113,109 @@ class SvnController extends Zend_Controller_Action
 	$_level         = $options['svnrelay']['lock_level'];
 	return $_level;	
    }
+
+   public function updateLocalWorkingCopyWithFile($subtype,$directory,$filename,$content){
+   	$svn_path_subtype_local 	    = $this->getLocalBasePath($subtype);
+   	$svn_subtype_current_version    = svn_update($svn_path_subtype_local);
+   	$svn_subtype_new_version        = $svn_subtype_current_version;
+	$svn_subtype_updated            = 0;
+	$svn_update_error               = 0;
+	$svn_subtype_committed          = null;
+	$_commited						= false;
+	error_log("svn update found current version of ".$subtype." to be ".$svn_subtype_current_version);
+
+
+	$current_working_copy_file_path   = $svn_path_subtype_local."/".$directory."/".$filename;
+
+	$current_working_copy_file_exists = file_exists($current_working_copy_file_path);
+	error_log("svn looking for current file at ".$current_working_copy_file_path.", exists=".$current_working_copy_file_exists);
+
+	$_do_commit = false;
+	$_commited  = false;
+	if($current_working_copy_file_exists){
+		error_log("current working copy of file does not exists.");
+		if(strlen($content)==0){
+			error_log("new file has zero length.");
+			$_delete_path = $current_working_copy_file_path;
+			error_log("found zero content length for new file-->file will be deleted.");
+			$_deleted = true;
+			//$_deleted = @svn_delete($_delete_path,TRUE);
+			error_log("svn delete ".$_delete_path." ".$_deleted);
+			$_do_commit = true;
+		}else{
+			error_log("saving content to ".$current_working_copy_file_path);
+			error_log($content);
+			if(file_put_contents($current_working_copy_file_path,$content)){
+				error_log("saved content to ".$current_working_copy_file_path);
+				$_do_commit = true;
+			}else{
+				error_log("did not save content to ".$current_working_copy_file_path);
+			}
+		}
+	}else{
+		error_log("current working copy of file does not exist.");
+		//add file
+		if(file_put_contents($current_working_copy_file_path,$content)){
+			error_log("wrote content to current working copy and adding.");
+			$_add_path = $current_working_copy_file_path;
+			@svn_add($_add_path);	
+			$_do_commit = true;
+		}
+	}
+	error_log("svn status ".$svn_path_subtype_local);
+	$this->view->status = @svn_status($svn_path_subtype_local);
+	if($_do_commit && is_array($this->view->status)){
+		$_status_size       = count($this->view->status);
+		error_log("svn status found ".$_status_size." items.");
+		
+		if($_status_size>0){
+
+			error_log("svn commiting added or modified file for ".$svn_path_subtype_local);
+
+					//MT: error suppression from this error which may be due to a bug in the API
+					//https://bugs.php.net/bug.php?id=60583
+					/**
+			[Thu May 24 17:06:20 2012] [error] [client 127.0.0.1] PHP Warning:  svn_commit(): svn error(s) occured\n200031 (Attempted to write to readonly SQLite db) Commit failed (details follow):\n200031 (Attempted to write to readonly SQLite db) attempt to write a readonly database\n200031 (Attempted to write to readonly SQLite db) attempt to write a readonly database\n in /var/www/bfw-svnrelay/application/controllers/SvnController.php on line 89
+			NOTE file is added correctly but generates error on commit, but then shows up in repository
+					**/
+			//$svn_subtype_committed = true;
+			$svn_subtype_committed  = @svn_commit("commiting updated subtype ".$subtype,array($svn_path_subtype_local));
+			$_commited		= true;
+					//$this->view->committed = $svn_subtype_committed;
+
+					
+
+
+		}else{
+			error_log("svn not commiting ".$subtype." because no changes to file were found.");
+		}
+	}else{
+		error_log("svn found null status for ".$subtype);
+	}
+	if($_commited){
+			//This generates an 'E' status on the command line, but seems to make things work
+			$svn_subtype_new_version    = @svn_update($svn_path_subtype_local);
+			$svn_subtype_updated        = $svn_subtype_new_version > $svn_subtype_current_version ? "1" : "0";
+			error_log("svn repository for ".$subtype." after commit of file now at version ".$svn_subtype_new_version);
+			//return $svn_subtype_committed[0];
+					
+			$this->view->statusafter = @svn_status($svn_path_subtype_local);
+					if(is_array($this->view->statusafter)){
+						if(count($this->view->statusafter)>0){
+							$svn_update_error = 1;//count($this->view->statusafter);
+							error_log("ERROR: status for ".$subtype." unresolved after update:");
+							error_log(json_encode($this->view->statusafter));
+						}
+					}
+	}
+	return array($svn_subtype_updated, $svn_subtype_current_version, $svn_subtype_new_version,$svn_update_error);
+   	//return(true,1,2,null);
+   }
  
    public function updateLocalWorkingCopy($subtype){
-	$svn_path_subtype_local 	= $this->getLocalBasePath($subtype);
+	$svn_path_subtype_local 	    = $this->getLocalBasePath($subtype);
 	$svn_subtype_current_version    = svn_update($svn_path_subtype_local);
-        $svn_subtype_new_version        = $svn_subtype_current_version;
+    $svn_subtype_new_version        = $svn_subtype_current_version;
 	$svn_subtype_updated            = 0;
 	$svn_update_error               = 0;
 	$svn_subtype_committed          = null;
@@ -252,29 +350,33 @@ class SvnController extends Zend_Controller_Action
 	return array($svn_subtype_updated, $svn_subtype_current_version, $svn_subtype_new_version,$svn_update_error);
    }
    public function createRemoteRepository($subtype,$fromextracted=true){
+   	error_log("creating remote repository");
 	$svn_subtype_committed  = null;
 	$svn_path_subtype_local = $this->getLocalBasePath($subtype);
 	//MT: subtype does not exist in remote repository
 	//MT: first check to see if local working copy dir exists
 	if(file_exists($svn_path_subtype_local)){
 		//delete working copy dir---for error failover in case dir has been created by accident without checkin
+		error_log("deleting unchecked in local copy at ".$svn_path_subtype_local);
 		$this->delete_directory($svn_path_subtype_local);
 	}
 	//MT: this condition should always be true if dir was deleted as per prev step---leave in for now
 	if(!file_exists($svn_path_subtype_local)){
 		//create local working copy directory
 		//check in to remote repository
-		
+		error_log("creating local working copy of subtype ".$svn_path_subtype_local);
 		if($fromextracted){
 			$_extracted = $this->getDownloadDir($subtype);
 			if(file_exists($_extracted)){
 				//$svn_subtype_mkdir     = svn_mkdir($svn_path_subtype_local);
 				$this->view->copied    = $this->copy_directory($_extracted,$svn_path_subtype_local);
+				error_log("adding local working copy at ".$svn_path_subtype_local);
 				$_added                = svn_add($svn_path_subtype_local);
 			}
 		}else if(!file_exists($svn_path_subtype_local)){
 			$svn_subtype_mkdir     = svn_mkdir($svn_path_subtype_local);
 		}
+		error_log("commiting local subtype in ".$svn_path_subtype_local);
 		$svn_subtype_committed = @svn_commit("created subtype ".$subtype,array($svn_path_subtype_local));
 	}
 	return $svn_subtype_committed[0];
@@ -734,6 +836,50 @@ class SvnController extends Zend_Controller_Action
 		$this->view->message = "OK";
 	}	
     }
+    public function uploadfileAction(){
+    error_log("====== uploadfileAction");
+
+    $this->getHelper('layout')->setLayout('ajax');
+
+	$_subtype       = $this->getRequest()->getParam('subtype');
+	$_directory     = $this->getRequest()->getParam('directory');
+	$_filename      = $this->getRequest()->getParam('filename');
+	$_user          = $this->getRequest()->getParam('user');
+	$_content		= $this->getRequest()->getParam('content');
+
+
+	$retarray	     		   = array();
+	$retarray['status']        = 1;
+	$retarray['message'] 	   = "OK";
+	$retarray['subtype']       = $_subtype;
+	$retarray['directory']     = $_directory;
+	$retarray['filename']      = $_filename;
+	$retarray['user']          = $_user;
+
+	$retarray['contentlength'] = isset($_content)? strlen($_content) : '-1';
+
+	$_remoteexists = $this->repositoryExists($_subtype);
+	if(!$_remoteexists){
+			$retarray['status']        = 0;
+			$retarray['message'] 	   = "The subtype ".$_subtype." has not yet been committed to the repository.";
+			//$this->view->remotecreated = $this->createRemoteRepository($subtype);	
+	}else{
+			 
+			$_update_result			   = $this->updateLocalWorkingCopyWithFile($_subtype,$_directory,$_filename,$_content);
+			$retarray['result']        = array();
+			$retarray['result']['localupdated']  = $_update_result[0];
+			$retarray['result']['oldversion']    = $_update_result[1];
+			$retarray['result']['newversion']    = $_update_result[2];
+			$retarray['result']['updateerror']   = $_update_result[3];
+			
+	}
+
+
+	$this->view->msg           = json_encode($retarray);
+	
+
+    }
+
     public function downloadzipAction(){
 	
 	error_log("======");
@@ -741,6 +887,7 @@ class SvnController extends Zend_Controller_Action
 	$digfir     = $this->getRequest()->getParam('digfir');
 	$keysent    = $this->getRequest()->getParam('svnrelaykey');
 	$_user      = $this->getRequest()->getParam('user');
+	$this->deleteLockFile($subtype);
 
 	$_key       = $this->getKey();
 	$_do_download = false;
@@ -821,11 +968,13 @@ class SvnController extends Zend_Controller_Action
     }
     //MT: performs login to DIGFIR application
     public function doRemoteLogin(){
+    
 	$digfir_url	= $this->getDigfirUrl();
 	$url 		= $digfir_url.'user/login';
+	error_log("doRemoteLogin to url ".$url);
 	$client   = new Zend_Http_Client($url, array(
     			'maxredirects' => 5,
-			'keepalive' => true,
+				'keepalive' => true,
     			'timeout'      => 30));
 	$client->setConfig(array('strictredirects' => false));
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
@@ -873,20 +1022,21 @@ class SvnController extends Zend_Controller_Action
     }
 
     public function doDownloadZip($subtype){
+		error_log("doDownloadZip");
+		$zip_url	= $this->getRequest()->getParam('zipurl');
+		$bypass_login	= $this->getRequest()->getParam('bypasslogin');
+
+		$client		= null;	
 	
-	$zip_url	= $this->getRequest()->getParam('zipurl');
-	$bypass_login	= $this->getRequest()->getParam('bypasslogin');
-
-	$client		= null;	
-
 	if($bypass_login){
 		error_log("bypassing login to digfir app");
 		$url = $zip_url;
 		$client   = new Zend_Http_Client($url,array(
     			'maxredirects' => 5,
-			'keepalive' => true,
+			    'keepalive' => true,
     			'timeout'      => 30));
 	}else{
+		error_log("logging into digfir app");
 		$client   = $this->doRemoteLogin();
 		$digfir_url	= $this->getDigfirUrl();
 		$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
@@ -1011,7 +1161,7 @@ class SvnController extends Zend_Controller_Action
 			error_log("promptRemoteUpdate calling digfirfiles update with url ".$digfirfiles_update_url);
 			$client   = new Zend_Http_Client($digfirfiles_update_url, array(
     			'maxredirects' => 5,
-			'keepalive' => true,
+				'keepalive' => true,
     			'timeout'      => 30));
 			//error_log("getting key");
 			$_key = $this->getKey();
