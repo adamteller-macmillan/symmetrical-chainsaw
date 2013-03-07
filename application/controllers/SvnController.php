@@ -867,6 +867,8 @@ class SvnController extends Zend_Controller_Action
 			 
 			$_update_result			   = $this->updateLocalWorkingCopyWithFile($_subtype,$_directory,$_filename,$_content);
 			$retarray['result']        = array();
+			$retarray['status']        = 0;
+
 			$retarray['result']['localupdated']  = $_update_result[0];
 			$retarray['result']['oldversion']    = $_update_result[1];
 			$retarray['result']['newversion']    = $_update_result[2];
@@ -874,14 +876,20 @@ class SvnController extends Zend_Controller_Action
 
 			$_local_updated = $retarray['result']['localupdated'];
 			if($this->updateRemoteFiles()){
+				$retarray['digfirfiles_url'] = $this->getDigfirfilesPublicUrl($_subtype);
 				if($_local_updated){
 					$remoteupdated = $this->promptRemoteUpdate($_subtype);	
 					if($remoteupdated){
 						$retarray['remoteupdated']   = json_decode($remoteupdated);
+						$retarray['message'] 	     = "The file was commited to the repository and checked out to the staging server at <a href=\"".$retarray['digfirfiles_url']."\">".$retarray['digfirfiles_url']."</a>";
+					}else{
+						$retarray['message'] 	     = "The file was commited to the repository but was not checked out to the staging server.";
 					}
 					
 				}
-				$retarray['digfirfiles_url'] = $this->getDigfirfilesPublicUrl($_subtype);
+				
+			}else{
+				$retarray['message'] 	     = "The file was commited to the repository but was not checked out to the staging server.";
 			}
 			
 	}
