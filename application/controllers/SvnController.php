@@ -871,6 +871,18 @@ class SvnController extends Zend_Controller_Action
 			$retarray['result']['oldversion']    = $_update_result[1];
 			$retarray['result']['newversion']    = $_update_result[2];
 			$retarray['result']['updateerror']   = $_update_result[3];
+
+			$_local_updated = $retarray['result']['localupdated'];
+			if($this->updateRemoteFiles()){
+				if($_local_updated){
+					$remoteupdated = $this->promptRemoteUpdate($_subtype);	
+					if($remoteupdated){
+						$retarray['remoteupdated']   = json_decode($remoteupdated);
+					}
+					
+				}
+				$retarray['digfirfiles_url'] = $this->getDigfirfilesPublicUrl($_subtype);
+			}
 			
 	}
 
