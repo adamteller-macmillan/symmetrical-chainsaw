@@ -4,86 +4,519 @@ date_default_timezone_set('America/New_York') ;
 class SvnController extends Zend_Controller_Action
 {
 
-  
-
     public function init()
     {
         /* Initialize action controller here */
     }
-   public function updateRemoteFiles(){
-	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
-	$options        = $bootstrap->getOptions();
-	return $options['svnrelay']['update_remote_files'];
-   }
-  
-   public function getRemoteBasePath($subtype=null){
-	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
-	$options        = $bootstrap->getOptions();
-	$svn_path       = $options['svnrelay']['svn_path'];
-	$svn_repository = $options['svnrelay']['svn_repository'];
-	$_path = $svn_path.$svn_repository;
-	if($subtype){
-		$_path = $_path .= "/".$subtype;
-	}
-	return $_path;
-   }
-   public function getLocalBasePath($subtype=null){
-	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
-	$options        = $bootstrap->getOptions();
-	$svn_local      = $options['svnrelay']['svn_local'];
-	$svn_repository = $options['svnrelay']['svn_repository'];
-	$_path = $svn_local.$svn_repository;
-	if($subtype){
-		$_path = $_path .= "/".$subtype;
-	}
-	return $_path;
-   }
-   public function getDigfirfilesUrl(){
-	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
-	$options        = $bootstrap->getOptions();
-	if(!array_key_exists('digfirfiles_url',$options['svnrelay'])){
-		return null;
-	}
-	$digfirfiles_url     =   $options['svnrelay']['digfirfiles_url'];
-	return $digfirfiles_url;
-   }
-   public function getDigfirfilesPublicUrl($subtype){
-	//$_base_url = $this->getDigfirfilesUrl();
-	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
-	$options        = $bootstrap->getOptions();
-	$_public_url   = $options['svnrelay']['digfirfiles_public_url'];
-	//$_public_url = $_base_url."files/";
-	if($subtype){
-		$_public_url = $_public_url . $subtype."/";
-	}
-	return $_public_url;
-	
-   }
-   public function getDigfirfilesUpdateUrl($subtype=null){
-	$digfirfiles_url = $this->getDigfirfilesUrl();
-	if($digfirfiles_url ==null) return null;
-	$digfirfiles_update_url     = $digfirfiles_url."svn/update";
+ 
+    function clearlocksAction(){
+    	$_environment = $this->getRequest()->getParam('environment');
+		$this->getHelper('layout')->setLayout('ajax');
+		$_files  = $this->getListOfLockFiles($_environment);
+		$_result = array();
+		foreach($_files as $_file){
+			$_subtype = $_file[0];
+			$_result[$_subtype] = $this->deleteLockFile($_subtype,$_environment);
+		}
+		$this->view->result = $_result;
+    }
 
-	if($subtype){
-		$digfirfiles_update_url    = $digfirfiles_update_url     . "/subtype/".$subtype;
-	}
-	return $digfirfiles_update_url;
+   public function deleteAction(){
+		$this->getHelper('layout')->setLayout('ajax');
+	
+		$retarray 				= array();
+		$svn_committed   		= 0;
+		$subtype		   	    = $this->getRequest()->getParam('subtype');
+		$environment			= $this->getRequest()->getParam('environment');
+		$repository			    = $this->getRequest()->getParam('repository');
+		$this->view->repository = $repository;
+		$svn_path_base_local   		= $this->getLocalBasePath($subtype,$environment);
+
+		$retarray['svn_deleted'] 		    = "0";
+		$retarray['message']			    = "FAILED";
+		$retarray['subtype'] 		        = $subtype;
+		$retarray['svn_path_base_local']	= $svn_path_base_local;
+
+		$svn_delete	   		= svn_delete($svn_path_base_local,TRUE);
+		if($svn_delete){
+			$svn_committed        	= svn_commit("deleting subtype ".$subtype,array($svn_path_base_local));
+
+			$svn_deleted				    = $svn_committed[0];
+			$retarray['svn_deleted']		= $svn_deleted;
+			if($svn_deleted){
+				$this->deleteExistingDownloads($subtype,$environment); 
+				$retarray 			= array_merge($retarray,$this->doRemoteReinit($subtype));
+				$retarray['message'] 	 	= "OK";
+			}
+		}
+		$this->view->msg = json_encode($retarray);
    }
+   /** this is the 'important' action called by the Digfir app (see promptdownloadAction in Digfir SnvController.php **/
+
+   public function downloadzipAction(){
+	
+		error_log("======");
+		$subtype        = $this->getRequest()->getParam('subtype');
+		$environment    = $this->getRequest()->getParam('environment');
+		$staging        = $this->getRequest()->getParam('staging');
+		$repository     = $this->getRequest()->getParam('repository');
+		$digfir         = $this->getRequest()->getParam('digfir');
+		$keysent        = $this->getRequest()->getParam('svnrelaykey');
+		$_user          = $this->getRequest()->getParam('user');
+
+		$this->view->repository = $repository;
+		$this->deleteLockFile($subtype,$environment);
+
+		$_key       = $this->getKey();
+		$_do_download = false;
+		if(!empty($_key)){
+			error_log("local key is defined. validation from digfir required.");
+			if($_key===$keysent){
+				error_log("local key matches key passed from digfir.");
+				$this->view->digfir 	= $digfir;
+				if($digfir){
+					error_log("processing download request from digfir...");
+				}
+				if($subtype){
+					$_do_download = true;	
+				}else{
+					$this->view->message = "ERROR: The subtype must be specified.";	
+				}
+			}else{
+				error_log("the svnrelaykey value sent from digfir (".$keysent.") was invalid.");
+				$this->view->message = "ERROR: the svnrelay key sent from digfir was invalid.";
+			}
+		}else{
+			error_log("local key is not defined. validation of digfir app not performed.");
+			$_do_download = true;
+		}
+		if($_do_download){
+			$_is_locked  = TRUE;
+			$_lock_level = $this->getLockLevel();
+			error_log("found lock level to be ".$_lock_level);
+			if($_lock_level=="all"){
+				//keep locked if any lock exists for any subtype
+				$_locks = $this->getListOfLockFiles($environment);
+				if($_locks && count($_locks)>0){
+					$_lock = $_locks[0];
+					if($_lock){
+						$this->view->message = "WARNING: The subtype ".$subtype." is currently locked due to a commit of subtype '".$_lock[0]."' by user '".$_lock[3]."' initiated on ".date("D M j G:i:s T Y",$_lock[2]).". Please wait and try again in a few minutes. If this persists please contact an administrator. (lock level=all)";
+					}else{
+						$_is_locked = FALSE;
+					}
+				}else{
+					$_is_locked = TRUE;
+				}
+			}else if($_lock_level=="subtype"){
+				$_lock	= $this->getLockFileContents($subtype,$environment);
+				if($_lock==NULL){
+					$_is_locked = FALSE;
+				}else{
+					$this->view->message = "WARNING: The subtype ".$subtype." is currently locked due to a commit by user '".$_lock[3]."' initiated on ".date("D M j G:i:s T Y",$_lock[2]).".  Please wait and try again in a few minutes. If this persists please contact an administrator. (lock level=subtype)";
+				}
+			}else{
+				$_is_locked = FALSE;
+			}
+			if(!$_is_locked){
+
+				if($_lock_level=="subtype" || $_lock_level=="all"){
+					$user = $_user;
+					$this->writeLockFile($subtype,$user,$environment);
+				}
+				$this->view->success = $this->doDownloadZip($subtype,$environment,$staging);
+				if($subtype!=='beta'){
+					$this->deleteLockFile($subtype,$environment);
+				}
+			}else{
+				$retarray	     = array();
+				$retarray['message'] = $this->view->message;
+				$this->view->msg     = json_encode($retarray);
+				$this->getHelper('layout')->setLayout('ajax');
+			}
+		}else{
+			$retarray	     = array();
+			$retarray['message'] = $this->view->message;
+			$this->view->msg     = json_encode($retarray);
+			$this->getHelper('layout')->setLayout('ajax');
+			//error_log($this->view->msg);
+		}
+    }
+    public function indexAction(){
+		//$this->getHelper('layout')->setLayout('ajax');
+		//$this->getHelper('layout')->setLayout('default');
+		if($this->hasSvnLibraries()){
+			$this->view->has_svn = true;
+			$this->view->svn_path_base_remote  = $this->getRemoteBasePath();//$svn_path.$svn_repository;
+			$this->view->svn_path_base_local   = $this->getLocalBasePath();//$svn_local.$svn_repository;
+		}else{
+			$this->view->has_svn = false;
+		}
+    }
+   public function infoAction(){
+   		//fix this
+   		$environment = 'platinum';
+		//$this->do_repository = 1;//$this->getRequest()->getParam('dorepository');
+	
+		$this->do_repository = 1;
+		$this->getHelper('layout')->setLayout('ajax');
+
+		$this->view->svn_path_base_remote  = $this->getRemoteBasePath();//$svn_path.$svn_repository;
+		$this->view->svn_path_base_local   = $this->getLocalBasePath();//$svn_local.$svn_repository;
+
+		$this->view->digfirfiles_url	   = $this->getDigfirfilesUrl();
+
+		$this->view->lock_files 	   = $this->getListOfLockFiles($environment);
+	
+		if($this->hasSvnLibraries()){
+			$this->message       = "OK";
+			$this->view->has_svn = true;
+	
+			//error_log(json_encode($this->lsRemote(),TRUE));
+			if($this->do_repository){
+				$this->view->svn_ls =json_encode($this->lsRemote(),TRUE);
+			}
+			//$this->view->svn_ls = "1";
+		}else{
+			$this->view->has_svn = false;
+			$this->view->message = "php svn libraries not installed";
+		}
+   }
+
+   public function listAction(){
+    	$_environment = $this->getRequest()->getParam('environment');
+		$_repository  = $this->getRequest()->getParam('repository');
+		$this->view->repository = $_repository;
+		$this->subtype 			= $this->getRequest()->getParam('subtype');
+ 		$this->getHelper('layout')->setLayout('ajax');
+		$this->view->svn_list 	= $this->listRemote($this->getRemoteBasePath()."/".$this->subtype);
+   }
+   public function listlocalAction(){
+   	    $_environment = $this->getRequest()->getParam('environment');
+		$_repository  = $this->getRequest()->getParam('repository');
+		$this->view->repository = $_repository;
+		$this->subtype = $this->getRequest()->getParam('subtype');
+ 		$this->getHelper('layout')->setLayout('ajax');
+		$this->view->svn_list = $this->get_subdir_files($this->getLocalBasePath()."/".$this->subtype);
+   }
+
+   function listlocksAction(){
+   	   	$_environment = $this->getRequest()->getParam('environment');
+		$_repository  = $this->getRequest()->getParam('repository');
+		$this->view->repository = $_repository;
+		$this->getHelper('layout')->setLayout('ajax');
+		$this->view->lock_files = $this->getListOfLockFiles($_environment);
+    }
+   public function localworkingcopyexistsAction(){
+   	   	$_environment = $this->getRequest()->getParam('environment');
+		$_repository  = $this->getRequest()->getParam('repository');
+		$this->view->repository = $_repository;
+		$this->subtype = $this->getRequest()->getParam('subtype');
+		$this->getHelper('layout')->setLayout('ajax');
+		$svn_path_base_local      = $this->getLocalBasePath();//$svn_local.$svn_repository;
+		$svn_path_subtype_local   = $svn_path_base_local."/".$this->subtype;
+		$this->view->localworkingcopyexists = file_exists($svn_path_subtype_local."/.svn")? "1" : "0";
+		$this->view->message = $this->view->localworkingcopyexists? "local working copy exists" : "local working copy does not exist";
+		$this->view->svn_path_subtype_local = $svn_path_subtype_local;
+   }
+    function lockAction(){
+   		$_environment = $this->getRequest()->getParam('environment');
+		$this->view->lock_dir          = $this->getLockDir($_environment);
+		$this->view->lock_dir_exists   = file_exists($this->view->lock_dir);
+		$this->view->lock_dir_writable = is_writable($this->view->lock_dir);
+		$this->view->lock_files	       = $this->getListOfLockFiles($_environment);
+    }
+    public function lsAction(){
+    	$_environment = $this->getRequest()->getParam('environment');
+		$_repository  = $this->getRequest()->getParam('repository');
+		$this->view->repository = $_repository;
+        $this->getHelper('layout')->setLayout('ajax');
+		$this->view->svn_ls     = $this->lsRemote($_repository);
+		$this->view->message    = "svn list successful";
+    }
+    public function reinitAction(){
+       	$_environment = $this->getRequest()->getParam('environment');
+		$_repository  = $this->getRequest()->getParam('repository');
+		$this->view->repository = $_repository;
+		$this->getHelper('layout')->setLayout('ajax');
+		$subtype = $this->getRequest()->getParam('subtype');
+	
+		error_log("reinit action called with subtype ".$subtype);
+		$retarray = array();
+		$retarray['message'] = "OK";
+		$retarray['subtype']    = $subtype;
+	
+		if($subtype){
+			$svn_path_subtype_local 	= $this->getLocalBasePath($subtype);
+
+		
+			if(file_exists($svn_path_subtype_local)){
+				$retarray['local_path_exists']  = TRUE;
+				$svn_path_deleted		= $this->delete_directory($svn_path_subtype_local);	
+			}else{
+				$retarray['local_path_exists']  = FALSE;
+				$svn_path_deleted = FALSE;
+			}
+			if($svn_path_deleted==NULL){
+				$svn_path_deleted = FALSE;
+			}
+			$retarray['local_path']     	= $svn_path_subtype_local; 
+			$retarray['local_path_deleted'] = $svn_path_deleted;
+
+			$retarray = array_merge($retarray,$this->doRemoteReinit($subtype));	
+		
+		}
+		$this->view->msg = json_encode($retarray);
+    }
+    function removelockAction(){
+		$this->getHelper('layout')->setLayout('ajax');
+		$retarray = array();
+		$retarray['result'] = '0';
+		$_subtype     = $this->getRequest()->getParam('subtype');
+		$_environment = $this->getRequest()->getParam('environment');
+		$_repository  = $this->getRequest()->getParam('repository');
+		$this->view->repository = $_repository;
+		if($_subtype){
+			$this->view->result = $this->deleteLockFile($_subtype,$_environment);
+			if($this->view->result){
+				$retarray['result'] = '1';
+			}
+		}
+		$this->view->retarray = $retarray;
+    }
+   public function statusAction(){
+      	$_environment = $this->getRequest()->getParam('environment');
+		$_repository  = $this->getRequest()->getParam('repository');
+		$this->view->repository = $_repository;
+        $this->subtype = $this->getRequest()->getParam('subtype');
+		$this->getHelper('layout')->setLayout('ajax');
+		$this->view->svn_status = svn_status($this->getLocalBasePath()."/".$this->subtype);	  
+   } 
+   public function updateAction(){
+   	    $_environment = $this->getRequest()->getParam('environment');
+		$_repository  = $this->getRequest()->getParam('repository');
+		$this->view->repository = $_repository;
+  		$this->subtype = $this->getRequest()->getParam('subtype');
+		$this->getHelper('layout')->setLayout('ajax');
+		$svn_path_base_local      = $this->getLocalBasePath();//$svn_local.$svn_repository;
+		$svn_path_subtype_local   = $svn_path_base_local."/".$subtype;
+		$this->view->svn_path_subtype_local  = $svn_path_subtype_local;
+		$this->view->svn_subtype_updated     = svn_update($this->view->svn_path_subtype_local);
+		if($this->view->svn_subtype_updated){
+			$this->view->message = "the local working copy was updated.";
+		}else{
+			$this->view->message = "the local working copy was not updated.";
+		}
+   }
+   public function uploadfileAction(){
+    	error_log("====== uploadfileAction");
+
+    	$this->getHelper('layout')->setLayout('ajax');
+
+		$_subtype       = $this->getRequest()->getParam('subtype');
+		$_environment   = $this->getRequest()->getParam('environment');
+		$_directory     = $this->getRequest()->getParam('directory');
+		$_filename      = $this->getRequest()->getParam('filename');
+		$_user          = $this->getRequest()->getParam('user');
+		$_content		= $this->getRequest()->getParam('content');
+		$_repository  	= $this->getRequest()->getParam('repository');
+		$_staging       = $this->getRequest()->getParam('staging');
+
+		$this->view->repository = $_repository;
+
+		$retarray	     		   = array();
+		$retarray['status']        = 1;
+		$retarray['message'] 	   = "OK";
+		$retarray['subtype']       = $_subtype;
+		$retarray['directory']     = $_directory;
+		$retarray['filename']      = $_filename;
+		$retarray['user']          = $_user;
+
+		$retarray['contentlength'] = isset($_content)? strlen($_content) : '-1';
+
+		$_remoteexists = $this->repositoryExists($_subtype);
+		if(!$_remoteexists){
+			$retarray['status']        = 0;
+			$retarray['message'] 	   = "The subtype ".$_subtype." has not yet been committed to the repository.";
+			//$this->view->remotecreated = $this->createRemoteRepository($subtype);	
+		}else{
+			 
+			$_update_result			   = $this->updateLocalWorkingCopyWithFile($_subtype,$_directory,$_filename,$_content);
+			$retarray['result']        = array();
+			$retarray['status']        = 0;
+
+			$retarray['result']['localupdated']  = $_update_result[0];
+			$retarray['result']['oldversion']    = $_update_result[1];
+			$retarray['result']['newversion']    = $_update_result[2];
+			$retarray['result']['updateerror']   = $_update_result[3];
+
+			$_local_updated = $retarray['result']['localupdated'];
+			if($this->updateRemoteFiles()){
+				$retarray['digfirfiles_url'] = $this->getDigfirfilesPublicUrl($_subtype,$_environment,$_staging);
+				if($_local_updated){
+					$remoteupdated = $this->promptRemoteUpdate($_subtype,$_environment,$_staging);	
+					if($remoteupdated){
+						$retarray['remoteupdated']   = json_decode($remoteupdated);
+						$retarray['message'] 	     = "The file was commited to the repository and checked out to the staging server at <a href=\"".$retarray['digfirfiles_url']."\">".$retarray['digfirfiles_url']."</a>";
+					}else{
+						$retarray['message'] 	     = "The file was commited to the repository but was not checked out to the staging server.";
+					}
+				}	
+			}else{
+				$retarray['message'] 	     = "The file was commited to the repository but was not checked out to the staging server.";
+			}
+			
+		}
+		$this->view->msg           = json_encode($retarray);
+		//error_log("return message: ".$this->view->msg);
+    }
+
+
+   public function getRemoteBasePath($subtype=null){
+		$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
+		$options        = $bootstrap->getOptions();
+		$svn_path       = $options['svnrelay']['svn_path'];
+		//$svn_repository = $options['svnrelay']['svn_repository'];
+		//this uses repository variable passed from Digfir now
+		$svn_repository = $this->view->repository;
+		$_path = $svn_path.$svn_repository;
+		if($subtype){
+			$_path = $_path .= "/".$subtype;
+		}
+		return $_path;
+   }
+   public function getLocalBasePath($subtype=null,$environment=null){
+		$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
+		$options        = $bootstrap->getOptions();
+		$svn_local      = $options['svnrelay']['svn_local'];
+		//$svn_repository = $options['svnrelay']['svn_repository'];
+		//this uses repository variable passed from Digfir now
+		$svn_repository = $this->view->repository;
+		$_path = $svn_local.$svn_repository;
+		if($subtype){
+			$_path .= "/".$subtype;
+		}
+		return $_path;
+   }
+
    //MT: fix here allows the dev, staging, and production versions of digfir to work simultaneously with the same svnrelay app
    public function getDigfirUrl(){
 	//$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	//$options        = $bootstrap->getOptions();
 	//return $options['svnrelay']['digfir_url'];
-	$this->view->digfirhost     = $this->getRequest()->getParam('digfirhost');
-	$this->view->digfirusehttps = $this->getRequest()->getParam('digfirusehttps');
+		$this->view->digfirhost     = $this->getRequest()->getParam('digfirhost');
+		$this->view->digfirusehttps = $this->getRequest()->getParam('digfirusehttps');
 
-	$digfir_protocol = $this->view->digfirusehttps==="1" ? "https" : "http"; 
-	$digfir_url      = $digfir_protocol."://".$this->view->digfirhost."/";
-	error_log("using digfir url ".$digfir_url);
-	return $digfir_url;
+		$digfir_protocol = $this->view->digfirusehttps==="1" ? "https" : "http"; 
+		$digfir_url      = $digfir_protocol."://".$this->view->digfirhost."/";
+		error_log("using digfir url ".$digfir_url);
+		return $digfir_url;
    } 
+   public function getDigfirfilesUrl(){
+		$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
+		$options        = $bootstrap->getOptions();
+		if(!array_key_exists('digfirfiles_url',$options['svnrelay'])){
+			return null;
+		}
+		$digfirfiles_url     =   $options['svnrelay']['digfirfiles_url'];
+		return $digfirfiles_url;
+   }
+   public function getDigfirfilesPublicUrl($subtype,$environment,$staging){
+		//$_base_url = $this->getDigfirfilesUrl();
+		$bootstrap 		= Zend_Controller_Front::getInstance()->getParam('bootstrap');
+		$options        = $bootstrap->getOptions();
+		$_public_url    = $options['svnrelay']['digfirfiles_public_url'];
+		//$_public_url = $_base_url."files/";
+		if($staging){
+			$_public_url = $_public_url . $staging."/";
+		}
+		if($subtype){
+			$_public_url = $_public_url . $subtype."/";
+		}
+		return $_public_url;
+   }
+   public function getDigfirfilesUpdateUrl($subtype=null,$environment=null,$staging=null){
+		$digfirfiles_url = $this->getDigfirfilesUrl();
+		if($digfirfiles_url ==null) return null;
+		$digfirfiles_update_url     = $digfirfiles_url."svn/update/repository/".$this->view->repository.'/environment/'.$environment.'/staging/'.$staging;
+
+		if($subtype){
+			$digfirfiles_update_url    = $digfirfiles_update_url     . "/subtype/".$subtype;
+		}
+		return $digfirfiles_update_url;
+   }
+
+    /******* lock functions ****/
+    public function getLockLevel(){
+		$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
+		$options        = $bootstrap->getOptions();
+		$_level         = $options['svnrelay']['lock_level'];
+		return $_level;	
+    }
+    public function getLockDir($environment=null){
+		$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
+		$options        = $bootstrap->getOptions();
+		$_dir           = $options['svnrelay']['lock_dir'];
+		if($environment){
+			$_dir .= '/'.$environment;
+		}
+		if(!file_exists($_dir)){
+			error_log("creating lock directory: ".$_dir);
+			mkdir($_dir);
+		}else{
+			error_log("using lock directory: ".$_dir);
+		}
+		
+		return $_dir;
+    }
+    function getLockFilePath($subtype,$environment){
+		$_dir  = $this->getLockDir($environment);
+		$_path = $_dir."/".$subtype.".lock";
+
+		return $_path;
+    }
+    function writeLockFile($subtype,$user,$environment){
+    	$_lock_file_path = $this->getLockFilePath($subtype,$environment);
+    	error_log("attempting to write lock file to ".$_lock_file_path);
+		return file_put_contents($_lock_file_path,$user);
+    }
+    function deleteLockFile($_subtype,$_environment){
+		$_path = $this->getLockFilePath($_subtype,$_environment);
+		if(file_exists($_path)){
+			return unlink($_path);
+		}
+		return FALSE;
+    }
+    function getLockFileContents($_subtype,$_environment){
+		$_path = $this->getLockFilePath($_subtype,$_environment);
+		if(file_exists($_path)){
+			return array($_subtype, $_path, filemtime($_path), file_get_contents($_path),date("D M j G:i:s T Y",filemtime($_path)));
+		}
+		return null;
+    }
+    function getListOfLockFiles($environment){
+		$_dir   = $this->getLockDir($environment);
+		$_files = scandir($_dir);
+		$_lock_files = array();
+		foreach($_files as $_file){
+			$_path_info = pathinfo($_file);
+			if($_path_info['extension']=="lock"){
+				$_subtype      = $_path_info['filename'];
+				$_lock_files[] = $this->getLockFileContents($_subtype,$environment);
+			}
+		}	
+		return $_lock_files;	
+    }
+
+  
 
 
+
+
+	public function updateRemoteFiles(){
+		$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
+		$options        = $bootstrap->getOptions();
+		return $options['svnrelay']['update_remote_files'];
+   }
 
 
    public function getKey(){
@@ -92,27 +525,39 @@ class SvnController extends Zend_Controller_Action
 	$_key      = $options['svnrelay']['key'];
 	return $_key;
    }
-   public function getDownloadDir($subtype=null){
+   public function getDownloadDir($environment=null){
 	$bootstrap = Zend_Controller_Front::getInstance()->getParam('bootstrap');
 	$options        = $bootstrap->getOptions();
 	$_dir           = $options['svnrelay']['download_dir'];
-	if($subtype){
-		$_dir .= "/".$subtype;
+	error_log("found base download directory as ".$_dir);
+	if($environment){
+			$_dir .= "/".$environment;
+			
+			if(!file_exists($_dir)){
+				error_log("making environment download directory ".$_dir);
+				mkdir($_dir);
+			}else{
+				error_log("using environment download directory ".$_dir);
+			}
 	}
+	/**
+	//removed
+	if($subtype){
+		
+		
+		$_dir .= "/".$subtype;	
+		if(!file_exists($_dir)){
+			error_log("making subtype download directory ".$_dir);
+			mkdir($_dir);
+		}else{
+			error_log("using subtype download directory ".$_dir);
+		}		
+		
+	}
+	**/
 	return $_dir;
    }
-   public function getLockDir(){
-	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
-	$options        = $bootstrap->getOptions();
-	$_dir           = $options['svnrelay']['lock_dir'];
-	return $_dir;
-   }
-   public function getLockLevel(){
-	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
-	$options        = $bootstrap->getOptions();
-	$_level         = $options['svnrelay']['lock_level'];
-	return $_level;	
-   }
+
 
    public function updateLocalWorkingCopyWithFile($subtype,$directory,$filename,$content){
    	$svn_path_subtype_local 	    = $this->getLocalBasePath($subtype);
@@ -212,9 +657,12 @@ class SvnController extends Zend_Controller_Action
    	//return(true,1,2,null);
    }
  
-   public function updateLocalWorkingCopy($subtype){
+   public function updateLocalWorkingCopy($subtype,$environment=null){
+   	error_log("updateLocalWorkingCopy called for subtype ".$subtype." and environment ".$environment);
 	$svn_path_subtype_local 	    = $this->getLocalBasePath($subtype);
+	error_log("updating working copy at ".$svn_path_subtype_local);
 	$svn_subtype_current_version    = svn_update($svn_path_subtype_local);
+	error_log("svn update found current version of ".$subtype." to be ".$svn_subtype_current_version);
     $svn_subtype_new_version        = $svn_subtype_current_version;
 	$svn_subtype_updated            = 0;
 	$svn_update_error               = 0;
@@ -226,11 +674,15 @@ class SvnController extends Zend_Controller_Action
 	//MT: this must be set to TRUE in order to avoid conflict errors for commits involving both deletions and additions/modifications
 	$_do_separate_commit_for_deletions = TRUE;
 
-	error_log("svn update found current version of ".$subtype." to be ".$svn_subtype_current_version);
+	
 
-	$_extracted 		= $this->getDownloadDir($subtype);
-	error_log("updating working copy at ".$svn_path_subtype_local);
+	$_extracted 		 = $this->getDownloadDir($environment);
+	$_extracted         .= "/".$subtype;
+
+	error_log("found extracted directory from getDownloadDir to be ".$_extracted);
+
 	if(file_exists($_extracted)){
+		error_log("extracted file exists at download directory ".$_extracted);
 		if($svn_subtype_current_version){
 			
 		
@@ -349,7 +801,8 @@ class SvnController extends Zend_Controller_Action
 	$this->view->filesdeleted = $files_deleted;
 	return array($svn_subtype_updated, $svn_subtype_current_version, $svn_subtype_new_version,$svn_update_error);
    }
-   public function createRemoteRepository($subtype,$fromextracted=true){
+   public function createRemoteRepository($subtype,$environment=null){
+   	$fromextracted = true;
    	error_log("creating remote repository");
 	$svn_subtype_committed  = null;
 	$svn_path_subtype_local = $this->getLocalBasePath($subtype);
@@ -366,7 +819,9 @@ class SvnController extends Zend_Controller_Action
 		//check in to remote repository
 		error_log("creating local working copy of subtype ".$svn_path_subtype_local);
 		if($fromextracted){
-			$_extracted = $this->getDownloadDir($subtype);
+			$_extracted = $this->getDownloadDir($environment);
+			$_extracted .= "/".$subtype;
+
 			if(file_exists($_extracted)){
 				//$svn_subtype_mkdir     = svn_mkdir($svn_path_subtype_local);
 				$this->view->copied    = $this->copy_directory($_extracted,$svn_path_subtype_local);
@@ -450,7 +905,8 @@ class SvnController extends Zend_Controller_Action
 	return $_copied;
     }
    public function compare_directories($path1,$path2){
-	
+	error_log("compare_directory ".$path1." <---> ".$path2);
+
 	if(file_exists($path1) && file_exists($path2)){
 		$_e_1  = array();
 		$_e_2  = array();
@@ -469,16 +925,16 @@ class SvnController extends Zend_Controller_Action
 	return function_exists("svn_add");
    }
    public function lsRemote(){
-	$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
-	$options        = $bootstrap->getOptions();
-	//return $options['svnrelay']['digfir_url'];
-	$_username = $options['svnrelay']['svn_auth_username'];
-	$_password = $options['svnrelay']['svn_auth_password'];
-	if($_username){
-		svn_auth_set_parameter(SVN_AUTH_PARAM_DEFAULT_USERNAME, $_username);
-		svn_auth_set_parameter(SVN_AUTH_PARAM_DEFAULT_PASSWORD, $_password);
-	}
-	return svn_ls($this->getRemoteBasePath());
+		$bootstrap 	= Zend_Controller_Front::getInstance()->getParam('bootstrap');
+		$options        = $bootstrap->getOptions();
+		//return $options['svnrelay']['digfir_url'];
+		$_username = $options['svnrelay']['svn_auth_username'];
+		$_password = $options['svnrelay']['svn_auth_password'];
+		if($_username){
+			svn_auth_set_parameter(SVN_AUTH_PARAM_DEFAULT_USERNAME, $_username);
+			svn_auth_set_parameter(SVN_AUTH_PARAM_DEFAULT_PASSWORD, $_password);
+		}
+		return svn_ls($this->getRemoteBasePath());
    }
    public function repositoryExists($name){
 	$_ls = $this->lsRemote();
@@ -486,144 +942,19 @@ class SvnController extends Zend_Controller_Action
 	return array_key_exists($name,$_ls);
    }
 
-   public function indexAction(){
-	//$this->getHelper('layout')->setLayout('ajax');
-	//$this->getHelper('layout')->setLayout('default');
-	if($this->hasSvnLibraries()){
-		$this->view->has_svn = true;
-		$this->view->svn_path_base_remote  = $this->getRemoteBasePath();//$svn_path.$svn_repository;
-		$this->view->svn_path_base_local   = $this->getLocalBasePath();//$svn_local.$svn_repository;
-	}else{
-		$this->view->has_svn = false;
-	}
-   }
-   public function infoAction(){
 
-	//$this->do_repository = 1;//$this->getRequest()->getParam('dorepository');
-	
-	$this->do_repository = 1;
+
+
+
+ 
+
+   public function testAction()
+   {
+	error_log("testAction called");
 	$this->getHelper('layout')->setLayout('ajax');
-
-	$this->view->svn_path_base_remote  = $this->getRemoteBasePath();//$svn_path.$svn_repository;
-	$this->view->svn_path_base_local   = $this->getLocalBasePath();//$svn_local.$svn_repository;
-
-	$this->view->digfirfiles_url	   = $this->getDigfirfilesUrl();
-
-	$this->view->lock_files 	   = $this->getListOfLockFiles();
-	
-	if($this->hasSvnLibraries()){
-		$this->message       = "OK";
-		$this->view->has_svn = true;
-	
-		//error_log(json_encode($this->lsRemote(),TRUE));
-		if($this->do_repository){
-			$this->view->svn_ls =json_encode($this->lsRemote(),TRUE);
-		}
-		//$this->view->svn_ls = "1";
-	}else{
-		$this->view->has_svn = false;
-		$this->view->message = "php svn libraries not installed";
-	}
-	
-   }
-   public function lsAction(){
-        $this->getHelper('layout')->setLayout('ajax');
-	$this->view->svn_ls = $this->lsRemote();
-	$this->view->message = "svn list successful";
-   }
-   public function deleteAction(){
-	$this->getHelper('layout')->setLayout('ajax');
-	
-	$retarray 			= array();
-	$svn_committed   		= 0;
-	$subtype		   	= $this->getRequest()->getParam('subtype');
-	$svn_path_base_local   		= $this->getLocalBasePath($subtype);
-
-	$retarray['svn_deleted'] 		= "0";
-	$retarray['message']			= "FAILED";
-	$retarray['subtype'] 			= $subtype;
-	$retarray['svn_path_base_local']	= $svn_path_base_local;
-
-	$svn_delete	   		= svn_delete($svn_path_base_local,TRUE);
-	if($svn_delete){
-		$svn_committed        	= svn_commit("deleting subtype ".$subtype,array($svn_path_base_local));
-
-		$svn_deleted				= $svn_committed[0];
-		$retarray['svn_deleted']		= $svn_deleted;
-		if($svn_deleted){
-			$this->deleteExistingDownloads($subtype); 
-			$retarray 			= array_merge($retarray,$this->doRemoteReinit($subtype));
-			$retarray['message'] 	 	= "OK";
-		}
-	}
-	$this->view->msg = json_encode($retarray);
-	
-
-   }
-   public function listAction(){
-	$this->subtype = $this->getRequest()->getParam('subtype');
- 	$this->getHelper('layout')->setLayout('ajax');
-	$this->view->svn_list = $this->listRemote($this->getRemoteBasePath()."/".$this->subtype);
-   }
-   public function listlocalAction(){
-	$this->subtype = $this->getRequest()->getParam('subtype');
- 	$this->getHelper('layout')->setLayout('ajax');
-	$this->view->svn_list = $this->get_subdir_files($this->getLocalBasePath()."/".$this->subtype);
-	
-   }
-   public function localworkingcopyexistsAction(){
-	$this->subtype = $this->getRequest()->getParam('subtype');
-	$this->getHelper('layout')->setLayout('ajax');
-	$svn_path_base_local      = $this->getLocalBasePath();//$svn_local.$svn_repository;
-	$svn_path_subtype_local   = $svn_path_base_local."/".$this->subtype;
-	$this->view->localworkingcopyexists = file_exists($svn_path_subtype_local."/.svn")? "1" : "0";
-	$this->view->message = $this->view->localworkingcopyexists? "local working copy exists" : "local working copy does not exist";
-	$this->view->svn_path_subtype_local = $svn_path_subtype_local;
-   }
-   public function updateAction(){
-  	$this->subtype = $this->getRequest()->getParam('subtype');
-	$this->getHelper('layout')->setLayout('ajax');
-	$svn_path_base_local      = $this->getLocalBasePath();//$svn_local.$svn_repository;
-	$svn_path_subtype_local   = $svn_path_base_local."/".$subtype;
-	$this->view->svn_path_subtype_local  = $svn_path_subtype_local;
-	$this->view->svn_subtype_updated     = svn_update($this->view->svn_path_subtype_local);
-	if($this->view->svn_subtype_updated){
-		$this->view->message = "the local working copy was updated.";
-	}else{
-		$this->view->message = "the local working copy was not updated.";
-	}
-   }
-   public function copypublishedfilesAction(){
-  	$this->subtype = $this->getRequest()->getParam('subtype');
-	$this->getHelper('layout')->setLayout('ajax');
-	$svn_path_base_local      = $this->getLocalBasePath();//$svn_local.$svn_repository;
-	$svn_path_subtype_local   = $svn_path_base_local."/".$subtype;
-	$this->view->svn_path_subtype_local  = $svn_path_subtype_local;
-
-	//MT: return OK for now, do nothing
-	$this->view->message = "copypublishedfiles: OK";
-   }
-
-   public function statusAction(){
-        $this->subtype = $this->getRequest()->getParam('subtype');
-	$this->getHelper('layout')->setLayout('ajax');
-	$this->view->svn_status = svn_status($this->getLocalBasePath()."/".$this->subtype);	  
+	$this->view->subtype = $this->getRequest()->getParam('subtype');
+        // action body
    } 
-   //MT: ajax method that copies files from publish directory to local working copy, compares files, and then commits to repository
-   public function commitAction(){
-	$this->getHelper('layout')->setLayout('ajax');
-	$zip_contents_string = $this->getRequest()->getParam('body');
-	try{
-		$zip_contents_obj  = json_decode($zip_contents_string,TRUE);
-		$base_dir          = $zip_contents_obj['base_dir'];
-		$contents          = $zip_contents_obj['contents'];
-		$this->view->message = "OK";	
-	}catch(Exception $e){
-		$this->view->message = "Error: ".$e;		
-	}
-   }
-
-  
 
    //MT: test svn action to follow publish all
    //see http://www.php.net/manual/en/book.svn.php for svn libraries for php
@@ -706,26 +1037,7 @@ class SvnController extends Zend_Controller_Action
 		$this->view->message = "php svn libraries not installed";
 	}
    }
-   function list_directory($dirname){
-	$_array = array();
-	/**
-	
-    	$_ls    = scandir($path);
-        foreach($_ls as $_f)  {
-            if ($_f === '.' || $_f === '..' || $_f=='.svn') {
-                continue; }
-	    if(is_dir($_f)){
-		$_subpath = $_base.$_f.'/';
-		$_array[] = $_subpath;
-            	$_array   = array_merge($_array,$this->get_subdir_files($path."/".$_f,$_subpath));
-            }else{
-		$_array[] = $_base.$_f;
-	    }
-    	}   
-    	
-	**/
-	return $_array;
-   }
+
 
    function delete_directory($dirname, $result = true) {
 			if (is_dir($dirname)) {
@@ -749,13 +1061,7 @@ class SvnController extends Zend_Controller_Action
    }
 
 
-    public function testAction()
-    {
-	error_log("testAction called");
-	$this->getHelper('layout')->setLayout('ajax');
-	$this->view->subtype = $this->getRequest()->getParam('subtype');
-        // action body
-    }
+
     public function doRemoteReinit($subtype){
 		error_log("performing remote reinit for subtype ".$subtype);
 		$retarray = array();
@@ -785,207 +1091,7 @@ class SvnController extends Zend_Controller_Action
 
     }
 
-    public function reinitAction(){
-	$this->getHelper('layout')->setLayout('ajax');
-	$subtype = $this->getRequest()->getParam('subtype');
-	
-	error_log("reinit action called with subtype ".$subtype);
-	$retarray = array();
-	$retarray['message'] = "OK";
-	$retarray['subtype']    = $subtype;
-	
-	if($subtype){
-		$svn_path_subtype_local 	= $this->getLocalBasePath($subtype);
 
-		
-		if(file_exists($svn_path_subtype_local)){
-			$retarray['local_path_exists']  = TRUE;
-			$svn_path_deleted		= $this->delete_directory($svn_path_subtype_local);	
-		}else{
-			$retarray['local_path_exists']  = FALSE;
-			$svn_path_deleted = FALSE;
-		}
-		if($svn_path_deleted==NULL){
-				$svn_path_deleted = FALSE;
-		}
-		$retarray['local_path'] 	= $svn_path_subtype_local; 
-		$retarray['local_path_deleted'] = $svn_path_deleted;
-
-		$retarray = array_merge($retarray,$this->doRemoteReinit($subtype));
-		
-		
-		
-	}
-
-
-	
-	$this->view->msg = json_encode($retarray);
-    }
-
-    public function initiatecommitAction(){
-	$this->getHelper('layout')->setLayout('ajax');
-	$this->view->subtype = $this->getRequest()->getParam('subtype');
-	
-
-	error_log("subtype=".$this->view->subtype);
-	
-	$this->view->testmessage = "OK";
-	if(!$this->view->subtype){
-		$this->view->message = "ERROR: subtype not defined";
-	}else{
-		$this->view->message = "OK";
-	}	
-    }
-    public function uploadfileAction(){
-    error_log("====== uploadfileAction");
-
-    $this->getHelper('layout')->setLayout('ajax');
-
-	$_subtype       = $this->getRequest()->getParam('subtype');
-	$_directory     = $this->getRequest()->getParam('directory');
-	$_filename      = $this->getRequest()->getParam('filename');
-	$_user          = $this->getRequest()->getParam('user');
-	$_content		= $this->getRequest()->getParam('content');
-
-
-	$retarray	     		   = array();
-	$retarray['status']        = 1;
-	$retarray['message'] 	   = "OK";
-	$retarray['subtype']       = $_subtype;
-	$retarray['directory']     = $_directory;
-	$retarray['filename']      = $_filename;
-	$retarray['user']          = $_user;
-
-	$retarray['contentlength'] = isset($_content)? strlen($_content) : '-1';
-
-	$_remoteexists = $this->repositoryExists($_subtype);
-	if(!$_remoteexists){
-			$retarray['status']        = 0;
-			$retarray['message'] 	   = "The subtype ".$_subtype." has not yet been committed to the repository.";
-			//$this->view->remotecreated = $this->createRemoteRepository($subtype);	
-	}else{
-			 
-			$_update_result			   = $this->updateLocalWorkingCopyWithFile($_subtype,$_directory,$_filename,$_content);
-			$retarray['result']        = array();
-			$retarray['status']        = 0;
-
-			$retarray['result']['localupdated']  = $_update_result[0];
-			$retarray['result']['oldversion']    = $_update_result[1];
-			$retarray['result']['newversion']    = $_update_result[2];
-			$retarray['result']['updateerror']   = $_update_result[3];
-
-			$_local_updated = $retarray['result']['localupdated'];
-			if($this->updateRemoteFiles()){
-				$retarray['digfirfiles_url'] = $this->getDigfirfilesPublicUrl($_subtype);
-				if($_local_updated){
-					$remoteupdated = $this->promptRemoteUpdate($_subtype);	
-					if($remoteupdated){
-						$retarray['remoteupdated']   = json_decode($remoteupdated);
-						$retarray['message'] 	     = "The file was commited to the repository and checked out to the staging server at <a href=\"".$retarray['digfirfiles_url']."\">".$retarray['digfirfiles_url']."</a>";
-					}else{
-						$retarray['message'] 	     = "The file was commited to the repository but was not checked out to the staging server.";
-					}
-					
-				}
-				
-			}else{
-				$retarray['message'] 	     = "The file was commited to the repository but was not checked out to the staging server.";
-			}
-			
-	}
-
-
-	$this->view->msg           = json_encode($retarray);
-	
-
-    }
-
-    public function downloadzipAction(){
-	
-	error_log("======");
-	$subtype    = $this->getRequest()->getParam('subtype');
-	$digfir     = $this->getRequest()->getParam('digfir');
-	$keysent    = $this->getRequest()->getParam('svnrelaykey');
-	$_user      = $this->getRequest()->getParam('user');
-	$this->deleteLockFile($subtype);
-
-	$_key       = $this->getKey();
-	$_do_download = false;
-	if(!empty($_key)){
-		error_log("local key is defined. validation from digfir required.");
-		if($_key===$keysent){
-			error_log("local key matches key passed from digfir.");
-			$this->view->digfir 	= $digfir;
-			if($digfir){
-				error_log("processing download request from digfir...");
-			}
-			if($subtype){
-				$_do_download = true;
-				
-			}else{
-				$this->view->message = "ERROR: The subtype must be specified.";
-				
-			}
-		}else{
-			error_log("the svnrelaykey value sent from digfir (".$keysent.") was invalid.");
-			$this->view->message = "ERROR: the svnrelay key sent from digfir was invalid.";
-		}
-	}else{
-		error_log("local key is not defined. validation of digfir app not performed.");
-		$_do_download = true;
-	}
-	if($_do_download){
-		$_is_locked  = TRUE;
-		$_lock_level = $this->getLockLevel();
-		error_log("found lock level to be ".$_lock_level);
-		if($_lock_level=="all"){
-			//keep locked if any lock exists for any subtype
-			$_locks = $this->getListOfLockFiles();
-			if($_locks && count($_locks)>0){
-				$_lock = $_locks[0];
-				if($_lock){
-					$this->view->message = "WARNING: The subtype ".$_subtype." is currently locked due to a commit of subtype '".$_lock[0]."' by user '".$_lock[3]."' initiated on ".date("D M j G:i:s T Y",$_lock[2]).". Please wait and try again in a few minutes. If this persists please contact an administrator. (lock level=all)";
-				}else{
-					$_is_locked = FALSE;
-				}
-			}else{
-				$_is_locked = TRUE;
-			}
-		}else if($_lock_level=="subtype"){
-			$_lock	= $this->getLockFileContents($subtype);
-			if($_lock==NULL){
-				$_is_locked = FALSE;
-			}else{
-				$this->view->message = "WARNING: The subtype ".$subtype." is currently locked due to a commit by user '".$_lock[3]."' initiated on ".date("D M j G:i:s T Y",$_lock[2]).".  Please wait and try again in a few minutes. If this persists please contact an administrator. (lock level=subtype)";
-			}
-		}else{
-			$_is_locked = FALSE;
-		}
-		if(!$_is_locked){
-
-			if($_lock_level=="subtype" || $_lock_level=="all"){
-				$user = $_user;
-				$this->writeLockFile($subtype,$user);
-			}
-			$this->view->success = $this->doDownloadZip($subtype);
-			if($subtype!=='beta'){
-				$this->deleteLockFile($subtype);
-			}
-		}else{
-			$retarray	     = array();
-			$retarray['message'] = $this->view->message;
-			$this->view->msg     = json_encode($retarray);
-			$this->getHelper('layout')->setLayout('ajax');
-		}
-	}else{
-
-		$retarray	     = array();
-		$retarray['message'] = $this->view->message;
-		$this->view->msg     = json_encode($retarray);
-		$this->getHelper('layout')->setLayout('ajax');
-		//error_log($this->view->msg);
-	}
-    }
     //MT: performs login to DIGFIR application
     public function doRemoteLogin(){
     
@@ -1017,119 +1123,121 @@ class SvnController extends Zend_Controller_Action
 	error_log("result: ".$this->view->message);
 	return $client;
     } 
-    public function deleteExistingDownloads($subtype){
 
-	$download_dir = $this->getDownloadDir();
-	$download_file = $download_dir."/".$subtype.".zip";
 
-	if(file_exists($download_file)){
-		unlink($download_file);
-		error_log("deleting existing zip file ".$download_file);
-	}else{
-		error_log("not deleting existing zip file ".$download_file." because it does not yet exist.");
-	}
+    public function deleteExistingDownloads($subtype,$environment){
 
-	$extract_dir = $download_dir."/".$subtype;
+		$download_dir = $this->getDownloadDir($environment);
 
-	if(file_exists($extract_dir)){
-		error_log("deleting extract directory ".$extract_dir);
-		$this->delete_directory($extract_dir);
-			
-	}else{
-		error_log("not deleting extract directory ".$extract_dir. "because it does not yet exist.");
-	}
-	return array($download_dir,$download_file,$extract_dir);
+		$download_file = $download_dir."/".$subtype.".zip";
+
+		if(file_exists($download_file)){
+			unlink($download_file);
+			error_log("deleting existing zip file ".$download_file);
+		}else{
+			error_log("not deleting existing zip file ".$download_file." because it does not yet exist.");
+		}
+
+		$extract_dir = $download_dir."/".$subtype;
+
+		if(file_exists($extract_dir)){
+			error_log("deleting extract directory ".$extract_dir);
+			$this->delete_directory($extract_dir);		
+		}else{
+			error_log("not deleting extract directory ".$extract_dir. "because it does not yet exist.");
+		}
+		return array($download_dir,$download_file,$extract_dir);
     }
 
-    public function doDownloadZip($subtype){
-		error_log("doDownloadZip");
-		$zip_url	= $this->getRequest()->getParam('zipurl');
+    public function doDownloadZip($subtype,$environment,$staging){
+		error_log(">>>> doDownloadZip subtype=".$subtype.", environment=".$environment.", staging=".$staging);
+		$zip_url	    = $this->getRequest()->getParam('zipurl');
 		$bypass_login	= $this->getRequest()->getParam('bypasslogin');
 
 		$client		= null;	
 	
-	if($bypass_login){
-		error_log("bypassing login to digfir app");
-		$url = $zip_url;
-		$client   = new Zend_Http_Client($url,array(
+		if($bypass_login){
+			error_log("bypassing login to digfir app");
+			$url = $zip_url;
+			$client   = new Zend_Http_Client($url,array(
     			'maxredirects' => 5,
 			    'keepalive' => true,
     			'timeout'      => 30));
-	}else{
-		error_log("logging into digfir app");
-		$client   = $this->doRemoteLogin();
-		$digfir_url	= $this->getDigfirUrl();
-		$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
-		$client->setUri($url);
-		
-	}
-	$retarray = array();
+		}else{
+			error_log("logging into digfir app");
+			$client     = $this->doRemoteLogin();
+			$digfir_url	= $this->getDigfirUrl();
+			$url 		= $digfir_url.'subtype/downloadzip/id/'.$subtype.".zip";
+			$client->setUri($url);	
+		}
+		$retarray = array();
 
-	$downloads = $this->deleteExistingDownloads($subtype);
-	$download_dir 	= $downloads[0];
-	$download_file  = $downloads[1];
-	$extract_dir    = $downloads[2];
- 
-	error_log("commencing download of zip from ".$url);
+		$downloads = $this->deleteExistingDownloads($subtype,$environment);
+		$download_dir 	= $downloads[0];
+		$download_file  = $downloads[1];
+		$extract_dir    = $downloads[2];
+ 	
 
-	$client->setStream();
-	$response = $client->request('GET');
-	$body     = $response->getBody();
-	//error_log($body);
-	//error_log($response->getMessage());
-	//error_log("retrieving zip file from ".$url);
+		error_log("commencing download of zip from ".$url);
+
+		$client->setStream();
+		$response = $client->request('GET');
+		$body     = $response->getBody();
+		//error_log($body);
+		//error_log($response->getMessage());
+		//error_log("retrieving zip file from ".$url);
 	
-	$headers = $response->getHeaders();
-	foreach($headers as $name=>$value){
-	//error_log("  ".$name.": ".$value);
-	}
-	$ctype 	  = $response->getHeader('Content-type');
-	//error_log("message: ".$response->getStatus()." ".$response->getMessage()." content-type:".$ctype);
-	//error_log("stream name: ".$response->getStreamName());
+		$headers = $response->getHeaders();
+		foreach($headers as $name=>$value){
+			//error_log("  ".$name.": ".$value);
+		}
+		$ctype 	  = $response->getHeader('Content-type');
+		error_log("download message: ".$response->getStatus()." ".$response->getMessage()." content-type:".$ctype);
+		error_log("download stream name: ".$response->getStreamName());
 
 	
-	//error_log("file name: ".$download_file);
-	$this->view->copied = copy($response->getStreamName(),$download_file);
-	error_log("copied zip file to ".$download_file);
-	$zip = new ZipArchive;
-	$res = $zip->open($download_file);
-	if ($res === TRUE) {
+		error_log("download file name: ".$download_file);
+		$this->view->copied = copy($response->getStreamName(),$download_file);
+		error_log("copied zip file to ".$download_file);
+		$zip = new ZipArchive;
+		$res = $zip->open($download_file);
+		if ($res === TRUE) {
 		
-		error_log("creating directory ".$extract_dir);
-		mkdir($extract_dir);
+			error_log("creating directory ".$extract_dir);
+			mkdir($extract_dir);
 		
          	$zip->extractTo($extract_dir."/");
          	$zip->close();
          	$this->view->extracted = 1;
 
-		$_dir_listing = $this->get_subdir_files($extract_dir);
-		foreach($_dir_listing as $_listing){
-			//error_log($_listing);
-		}
-		$this->view->dirlisting = $_dir_listing;
+			$_dir_listing = $this->get_subdir_files($extract_dir);
+			foreach($_dir_listing as $_listing){
+				//error_log($_listing);
+			}
+			$this->view->dirlisting = $_dir_listing;
      	} else {
          	$this->view->extracted = 0;
-		error_log("zip extract error: ".$res." for ".$download_file);
+			error_log("zip extract error: ".$res." for ".$download_file);
      	}
-	try{
-		$this->view->remoteexists = $this->repositoryExists($subtype);
-		if(!$this->view->remoteexists){
-			$this->view->remotecreated = $this->createRemoteRepository($subtype);	
-		}else{
+		try{
+			$this->view->remoteexists = $this->repositoryExists($subtype);
+			if(!$this->view->remoteexists){
+				$this->view->remotecreated = $this->createRemoteRepository($subtype,$environment);	
+			}else{
 			 
-			$_update_result= $this->updateLocalWorkingCopy($subtype);
+			$_update_result= $this->updateLocalWorkingCopy($subtype,$environment);
 			$this->view->localupdated  = $_update_result[0];
 			$this->view->oldversion    = $_update_result[1];
 			$this->view->newversion    = $_update_result[2];
 			$this->view->updateerror   = $_update_result[3];
 			
-		}
+			}
 		
-	}catch(Exception $e){
-		error_log($e);
-	}
+		}catch(Exception $e){
+			error_log($e);
+		}
 
-
+	error_log("####### 1");
 
 	if (is_array($ctype)) $ctype = $ctype[0];
 	$this->getHelper('layout')->setLayout('ajax');
@@ -1160,24 +1268,27 @@ class SvnController extends Zend_Controller_Action
 	
 	
 	if($this->updateRemoteFiles()){
+		error_log("updating remote files >>>>>");
 		if($this->view->remotecreated || $this->view->localupdated){
-			$remoteupdated = $this->promptRemoteUpdate($subtype);	
+			$remoteupdated = $this->promptRemoteUpdate($subtype,$environment,$staging);	
 			if($remoteupdated){
 				$retarray['remoteupdated']   = json_decode($remoteupdated);
 			
 			}
 		}
-		$retarray['digfirfiles_url'] = $this->getDigfirfilesPublicUrl($subtype);
+		$retarray['digfirfiles_url'] = $this->getDigfirfilesPublicUrl($subtype,$environment,$staging);
 	}
+	
 	$this->view->msg =	json_encode($retarray);
+	
 	return 1;
 
 
     }
-    function promptRemoteUpdate($subtype){
-	$digfirfiles_update_url = $this->getDigfirfilesUpdateUrl($subtype);
+    function promptRemoteUpdate($subtype,$environment,$staging){
+		$digfirfiles_update_url = $this->getDigfirfilesUpdateUrl($subtype,$environment,$staging);
 
-	if($digfirfiles_update_url){
+		if($digfirfiles_update_url){
 			error_log("promptRemoteUpdate calling digfirfiles update with url ".$digfirfiles_update_url);
 			$client   = new Zend_Http_Client($digfirfiles_update_url, array(
     			'maxredirects' => 5,
@@ -1227,16 +1338,38 @@ class SvnController extends Zend_Controller_Action
         $this->getHelper('layout')->setLayout('ajax');
 	$this->view->jsonstring = $response->getBody();
     }
-    function checkoutAction(){
-	$this->getHelper('layout')->setLayout('ajax');
-	$local_path 		   = "/home/matt/svn/digfir.test.0";
-	$local_path_container      = $local_path."/container";
-	error_log("OK: checkoutAction reinitializing working copy at ".$local_path);
 
-	$retarray = array();
-	$retarray['message'] = 'OK';
 
-	if(file_exists($local_path)){
+
+
+
+    
+
+    /**
+   //MT: ajax method that copies files from publish directory to local working copy, compares files, and then commits to repository
+   public function commitAction(){
+		$this->getHelper('layout')->setLayout('ajax');
+		$zip_contents_string = $this->getRequest()->getParam('body');
+		try{
+			$zip_contents_obj  = json_decode($zip_contents_string,TRUE);
+			$base_dir          = $zip_contents_obj['base_dir'];
+			$contents          = $zip_contents_obj['contents'];
+			$this->view->message = "OK";	
+		}catch(Exception $e){
+			$this->view->message = "Error: ".$e;		
+		}
+   }
+    
+      function checkoutAction(){
+		$this->getHelper('layout')->setLayout('ajax');
+		$local_path 		   = "/home/matt/svn/digfir.test.0";
+		$local_path_container      = $local_path."/container";
+		error_log("OK: checkoutAction reinitializing working copy at ".$local_path);
+
+		$retarray = array();
+		$retarray['message'] = 'OK';
+
+		if(file_exists($local_path)){
 		//local path exists
 		error_log("OK: checkoutAction local path ".$local_path." exists.");
 		if(is_writable($local_path)){
@@ -1284,91 +1417,14 @@ class SvnController extends Zend_Controller_Action
 			//error: local_path not writable
 			error_log("ERROR: checkoutAction local path ".$local_path." is not writable.");
 		}
-	}else{
+		}else{
 		//error: local path does not exist
 		error_log("ERROR: checkoutAction local path ".$local_path." does not exist.");
-	}
-	$this->view->jsonstring = json_encode($retarray);
-    }
-
-    function getLockFilePath($subtype){
-	$_dir  = $this->getLockDir();
-	$_path = $_dir."/".$subtype.".lock";
-	return $_path;
-    }
-
-    function writeLockFile($subtype,$user){
-	return file_put_contents($this->getLockFilePath($subtype),$user);
-    }
-    function deleteLockFile($_subtype){
-	$_path = $this->getLockFilePath($_subtype);
-	if(file_exists($_path)){
-		return unlink($_path);
-	}
-	return FALSE;
-    }
-
-
-    function getLockFileContents($_subtype){
-	$_path = $this->getLockFilePath($_subtype);
-	if(file_exists($_path)){
-		return array($_subtype, $_path, filemtime($_path), file_get_contents($_path),date("D M j G:i:s T Y",filemtime($_path)));
-	}
-	return null;
-    }
-
-    function getListOfLockFiles(){
-	$_dir   = $this->getLockDir();
-	$_files = scandir($_dir);
-	$_lock_files = array();
-	foreach($_files as $_file){
-		$_path_info = pathinfo($_file);
-		if($_path_info['extension']=="lock"){
-			$_subtype      = $_path_info['filename'];
-			$_lock_files[] = $this->getLockFileContents($_subtype);
 		}
-	}	
-	return $_lock_files;
-	
+		$this->view->jsonstring = json_encode($retarray);
     }
-    function removelockAction(){
-	$this->getHelper('layout')->setLayout('ajax');
-	$retarray = array();
-	$retarray['result'] = '0';
-	$_subtype = $this->getRequest()->getParam('subtype');
-	
-	if($_subtype){
-		$this->view->result = $this->deleteLockFile($_subtype);
-		if($this->view->result){
-			$retarray['result'] = '1';
-		}
-	}
-	$this->view->retarray = $retarray;
-    }
-    function clearlocksAction(){
-	$this->getHelper('layout')->setLayout('ajax');
-	$_files  = $this->getListOfLockFiles();
-	$_result = array();
-	foreach($_files as $_file){
-		$_subtype = $_file[0];
-		$_result[$_subtype] = $this->deleteLockFile($_subtype);
-	}
-	$this->view->result = $_result;
-    }
-    function listlocksAction(){
-	$this->getHelper('layout')->setLayout('ajax');
-	$this->view->lock_files = $this->getListOfLockFiles();
-	
-    }
-    
 
-    function lockAction(){
-	$this->view->lock_dir          = $this->getLockDir();
-	$this->view->lock_dir_exists   = file_exists($this->view->lock_dir);
-	$this->view->lock_dir_writable = is_writable($this->view->lock_dir);
+   **/
 
-	$this->view->lock_files	       = $this->getListOfLockFiles();
-
-    }
 }
 ?>
