@@ -1237,7 +1237,7 @@ class SvnController extends Zend_Controller_Action
 			error_log($e);
 		}
 
-	error_log("####### 1");
+	
 
 	if (is_array($ctype)) $ctype = $ctype[0];
 	$this->getHelper('layout')->setLayout('ajax');
@@ -1259,7 +1259,7 @@ class SvnController extends Zend_Controller_Action
 	$retarray['oldversion']       = $this->view->oldversion;
 	$retarray['newversion']       = $this->view->newversion;
 	$retarray['copied']           = $this->view->copied;
-	$retarray['diff']	      = $this->view->diff;
+	$retarray['diff']	          = $this->view->diff;
 	$retarray['committed']	      = $this->view->committed;
 	$retarray['filesadded']       = $this->view->filesadded;
 	$retarray['filesdeleted']     = $this->view->filesdeleted;
